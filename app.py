@@ -15,13 +15,17 @@ def load_data():
     df_staff = pd.read_csv(DETAILS_URL).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     df_events = pd.read_csv(EVENTS_URL).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
-    # Categorization Logic: "Driver" -> Assist.Technician, else Team Leader
+    # Logic: "Driver" in Leader Badge -> Assist.Technician, else Team Leader
     df_staff['Category'] = df_staff['Leader Badge'].apply(
         lambda x: "Assist.Technician" if str(x).lower() == "driver" else "Team Leader"
     )
     
+    # Ensure SN is string for matching; fix potential search errors
     df_staff['SN'] = df_staff['SN'].astype(str)
     df_events['SN'] = df_events['SN'].astype(str)
+    
+    # Pre-calculate display name for selectors
+    df_staff['Display'] = df_staff['SN'] + " - " + df_staff['Name'] + " (" + df_staff['Rank'] + ")"
     return df_staff, df_events
 
 # --- SECURITY ---
@@ -36,86 +40,82 @@ if "auth" not in st.session_state:
 df_staff, df_events = load_data()
 
 # --- SIDEBAR FILTERS ---
-st.sidebar.header("🔍 Global Filters")
+st.sidebar.header("🔍 Global Search")
+# Fixed search logic to prevent the 'AttributeError' from your first image
 search_sn = st.sidebar.text_input("Search by SN")
-category_filter = st.sidebar.multiselect("Category", options=df_staff['Category'].unique())
+category_filter = st.sidebar.multiselect("Filter by Category", options=["Team Leader", "Assist.Technician"])
 
-# Filter Logic
 filtered_staff = df_staff
 if search_sn:
-    filtered_staff = filtered_staff[filtered_staff['SN'].contains(search_sn)]
+    filtered_staff = filtered_staff[filtered_staff['SN'].str.contains(search_sn, na=False)]
 if category_filter:
     filtered_staff = filtered_staff[filtered_staff['Category'].isin(category_filter)]
 
 # --- TABS ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Dashboard", "➕ Add Data", "👤 Staff Details", "🗓️ Event Logs", "🏆 Leaderboard"
-])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "➕ Add Data", "👤 Staff Details", "🗓️ Event Logs", "🏆 Leaderboard"])
 
-with tab1:
-    st.title("📊 Overview")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Staff", len(df_staff))
-    c2.metric("Total Events", len(df_events))
-    c3.metric("Assist. Techs", len(df_staff[df_staff['Category'] == "Assist.Technician"]))
-
-with tab2:
+with tab2: # ADD DATA IMPROVEMENTS
     col_a, col_b = st.columns(2)
     with col_a:
         st.subheader("➕ Add New Staff")
         with st.form("staff_form"):
-            new_sn = st.text_input("SN")
-            new_name = st.text_input("Full Name")
-            new_badge = st.selectbox("Role", ["Team Leader", "Driver", "Staff"])
-            if st.form_submit_button("Generate Entry"):
-                st.info(f"Copy this to Google Sheets: {new_sn}, {new_name}, {new_badge}")
+            n_sn = st.text_input("SN")
+            n_name = st.text_input("Full Name")
+            n_rank = st.text_input("Rank")   # New Field
+            n_unit = st.text_input("Unit")   # New Field
+            n_badge = st.selectbox("Leader Badge", ["Team Leader", "Driver", "Staff"])
+            if st.form_submit_button("Generate Staff Entry"):
+                st.info(f"Add to Sheet: {n_sn}, {n_name}, {n_rank}, {n_unit}, {n_badge}")
                 st.link_button("Go to Google Sheets", SHEET_EDIT_URL)
 
     with col_b:
         st.subheader("➕ Add New Event")
         with st.form("event_form"):
-            event_name = st.text_input("Event Name")
-            # Multiple Staff Selection
-            selected_staff = st.multiselect("Select Staff (SN)", options=df_staff['SN'].tolist())
-            event_date = st.date_input("Event Date")
-            if st.form_submit_button("Log Event"):
-                st.success(f"Log {event_name} for SNs: {', '.join(selected_staff)}")
-                st.link_button("Open Event Details Tab", SHEET_EDIT_URL)
+            e_name = st.text_input("Event Name")
+            e_loc = st.text_input("Location")
+            e_dur = st.number_input("Duration (Mins)", min_value=0) # New Field
+            # Multi-select using the new Display name (SN + Name + Rank)
+            e_staff = st.multiselect("Select Multiple Staff", options=df_staff['Display'].tolist())
+            if st.form_submit_button("Generate Event Log"):
+                st.success(f"Log {e_name} ({e_dur}m) for {len(e_staff)} staff.")
+                st.link_button("Go to Google Sheets", SHEET_EDIT_URL)
 
-with tab3:
-    st.title("👤 Staff Insight")
-    selected_staff_sn = st.selectbox("Select Staff to view History", options=df_staff['SN'].unique())
+with tab3: # STAFF INSIGHT IMPROVEMENTS
+    st.title("👤 Staff History")
+    # Fixed the "numbers" issue from your second image; now shows Name and Rank
+    choice = st.selectbox("Select Staff", options=df_staff['Display'].tolist())
+    sel_sn = choice.split(" - ")[0]
     
-    staff_info = df_staff[df_staff['SN'] == selected_staff_sn].iloc[0]
-    st.write(f"### Profile: {staff_info['Name']} ({staff_info['Category']})")
+    s_info = df_staff[df_staff['SN'] == sel_sn].iloc[0]
+    st.write(f"### Profile: {s_info['Name']}")
+    st.write(f"**Rank:** {s_info['Rank']} | **Unit:** {s_info['Unit']} | **Category:** {s_info['Category']}")
     
-    # Show individual attendance
-    attendance = df_events[df_events['SN'] == selected_staff_sn]
-    st.write("#### Attended Events")
-    st.dataframe(attendance, use_container_width=True, hide_index=True)
+    st.write("#### All Attended Events")
+    history = df_events[df_events['SN'] == sel_sn]
+    st.dataframe(history, use_container_width=True, hide_index=True)
 
-with tab4:
-    st.title("🗓️ Master Logs")
-    st.dataframe(df_events, use_container_width=True)
-
-with tab5:
-    st.title("🏆 Leaderboard")
+with tab5: # LEADERBOARD IMPROVEMENTS
+    st.title("🏆 Leaderboard (Top 5)")
     
-    # Calculate Leaderboard
-    leader_stats = df_events.groupby('SN').size().reset_index(name='Total Events')
-    # Assuming "Event Duration (Mins)" exists in your sheet
-    if 'Event Duration (Mins)' in df_events.columns:
-        duration_stats = df_events.groupby('SN')['Event Duration (Mins)'].sum().reset_index(name='Total Duration')
-        leader_stats = pd.merge(leader_stats, duration_stats, on='SN')
-    
-    leader_stats = pd.merge(leader_stats, df_staff[['SN', 'Name']], on='SN', how='left')
-    
-    col_l1, col_l2 = st.columns(2)
-    with col_l1:
-        st.subheader("🔥 Top 5 by Events")
-        st.table(leader_stats.sort_values(by='Total Events', ascending=False).head(5)[['Name', 'Total Events']])
+    # Calculate Stats
+    e_counts = df_events.groupby('SN').size().reset_index(name='Events')
+    # If duration column is named exactly 'Duration (Mins)' in your sheet:
+    if 'Duration (Mins)' in df_events.columns:
+        dur_stats = df_events.groupby('SN')['Duration (Mins)'].sum().reset_index(name='Total Mins')
+        leader_df = pd.merge(e_counts, dur_stats, on='SN')
+    else:
+        leader_df = e_counts
         
-    with col_l2:
-        st.subheader("⏳ Top 5 by Duration")
-        if 'Total Duration' in leader_stats.columns:
-            st.table(leader_stats.sort_values(by='Total Duration', ascending=False).head(5)[['Name', 'Total Duration']])
+    leader_df = pd.merge(leader_df, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+    
+    c_l1, c_l2 = st.columns(2)
+    with c_l1:
+        st.subheader("Most Events")
+        top_e = leader_df.sort_values('Events', ascending=False).head(5)
+        st.table(top_e[['Name', 'Rank', 'Events']])
+        
+    with c_l2:
+        st.subheader("Highest Duration")
+        if 'Total Mins' in leader_df.columns:
+            top_d = leader_df.sort_values('Total Mins', ascending=False).head(5)
+            st.table(top_d[['Name', 'Rank', 'Total Mins']])
