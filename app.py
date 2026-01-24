@@ -3,8 +3,8 @@ import pandas as pd
 
 # --- CONFIGURATION ---
 SHEET_ID = "1S33Dk_p9V1Xl2k7v_YkP_Y3x_9-u-W_06y298pIidAg" # Your Sheet ID
-DETAILS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Details"
-EVENTS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Event%20Details"
+DETAILS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}https://docs.google.com/spreadsheets/d/1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE/edit?usp=sharing"
+EVENTS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}https://docs.google.com/spreadsheets/d/1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE/edit?usp=sharing"
 
 st.set_page_config(page_title="Staff Tracking Dashboard", layout="wide")
 
@@ -57,3 +57,4 @@ if check_password():
     except Exception as e:
         st.error(f"Error loading data: {e}")
         st.info("Check that your Google Sheet headers are exactly 'SN', 'Name', etc.")
+
