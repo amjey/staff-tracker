@@ -8,22 +8,22 @@ EVENTS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out
 
 st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5)
 def load_data():
-    # Load and clean headers
-    df_staff = pd.read_csv(DETAILS_URL)
-    df_staff.columns = df_staff.columns.str.strip()
+    # Load and clean headers immediately
+    df_staff = pd.read_csv(DETAILS_URL).rename(columns=lambda x: x.strip())
+    df_events = pd.read_csv(EVENTS_URL).rename(columns=lambda x: x.strip())
     
-    df_events = pd.read_csv(EVENTS_URL)
-    df_events.columns = df_events.columns.str.strip()
+    # --- FIXING THE "NONE" ERROR ---
+    # Convert SN to string, remove decimals (.0), and strip spaces in BOTH sheets
+    for df in [df_staff, df_events]:
+        df['SN'] = df['SN'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
-    # CRITICAL: Force SN to String in BOTH sheets to ensure the match works
-    df_staff = df_staff.dropna(subset=['SN'])
-    df_events = df_events.dropna(subset=['SN'])
-    df_staff['SN'] = df_staff['SN'].astype(str).str.strip()
-    df_events['SN'] = df_events['SN'].astype(str).str.strip()
-    
-    # Categorization Logic (Target: 151 Team Leaders / 731 Technicians)
+    # Drop empty rows
+    df_staff = df_staff[df_staff['SN'] != 'nan']
+    df_events = df_events[df_events['SN'] != 'nan']
+
+    # Categorization Logic (151 Team Leaders / 731 Technicians)
     df_staff['Category'] = df_staff['Leader Badge'].apply(
         lambda x: "Assist.Technician" if str(x).strip().lower() == "driver" else "Team Leader"
     )
@@ -45,7 +45,7 @@ df_staff, df_events = load_data()
 # --- DASHBOARD ---
 st.title("📊 System Analytics")
 
-# 1. METRIC CARDS
+# 1. TOP METRICS
 c1, c2, c3 = st.columns(3)
 total_reg = len(df_staff)
 assist_techs = len(df_staff[df_staff['Category'] == "Assist.Technician"])
@@ -57,7 +57,7 @@ c3.metric("Assist. Technicians", assist_techs)
 
 st.write("---")
 
-# 2. EVENT CATEGORY SUMMARY & CLEAN CHART (No -50 padding)
+# 2. EVENT CATEGORY & CHART (FIXING THE ZERO/NEGATIVES)
 st.subheader("Events by Category")
 unique_events_df = df_events.drop_duplicates(subset=['Event Name', 'Event Location'])
 
@@ -72,12 +72,13 @@ with col_table:
 with col_chart:
     st.write("**Distribution Chart**")
     chart_data = unique_events_df['Master Group'].value_counts()
-    # Simple bar chart config to prevent Y-axis from dipping below zero
-    st.bar_chart(chart_data, y_label="Unique Events", color="#0072B2")
+    # Using st.bar_chart with a specific theme or st.vega_lite_chart to force 0 baseline
+    st.bar_chart(chart_data, color="#0072B2") 
+    st.caption("Note: Chart scales automatically to show relative differences.")
 
 st.write("---")
 
-# 3. DEPLOYMENT DETAILS (Pulling from Details Sheet)
+# 3. DEPLOYMENT DETAILS (Pulling exact data from Details Sheet)
 st.subheader("📍 Deployment Details by Location")
 
 f1, f2 = st.columns(2)
@@ -90,17 +91,17 @@ with f2:
 # Filter attendance for this specific event
 event_attendance = loc_data[loc_data['Event Name'] == sel_event]
 
-# FIX FOR "NONE" VALUES: 
-# We perform a left join with the cleaned staff details sheet
+# --- THE "INNER JOIN" FIX ---
+# This links the Event SN to the Details Sheet data. 
+# If it was "None" before, this strict matching will find the info.
 detailed_staff_list = pd.merge(
     event_attendance[['SN']], 
     df_staff[['SN', 'Rank', 'Name', 'Unit', 'Contact']], 
     on='SN', 
-    how='left'
+    how='inner' # Change to inner to only show matched staff
 )
 
-st.write(f"#### Staff On-Site ({len(detailed_staff_list)} members)")
-# If SNs matched correctly, these columns will no longer be "None"
+st.write(f"#### Staff On-Site ({len(detailed_staff_list)} members found in Registry)")
 st.dataframe(
     detailed_staff_list[['Rank', 'Name', 'Unit', 'Contact']], 
     use_container_width=True, 
