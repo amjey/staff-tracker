@@ -30,6 +30,8 @@ def load_data():
             return "Assist.Technician"
         elif badge_str in ["Master in Fireworks", "Pro in Fireworks"]:
             return "Team Leader"
+            elif badge_str in ["Team Leader"]:
+            return "Team Leader"
         return "Unassigned" # Fallback for other values
 
     df_staff['Category'] = df_staff['Leader Badge'].apply(categorize_staff)
@@ -99,3 +101,4 @@ st.dataframe(
     use_container_width=True, 
     hide_index=True
 )
+
