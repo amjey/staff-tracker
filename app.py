@@ -26,6 +26,20 @@ def load_data():
     
     # Pre-calculate display name for selectors
     df_staff['Display'] = df_staff['SN'] + " - " + df_staff['Name'] + " (" + df_staff['Rank'] + ")"
+
+    # Normalize/derive an event category column for grouping on the dashboard
+    # Prefer existing columns named like Category / Event Category / Event Type / Type (case-insensitive)
+    event_cat_col = None
+    for c in df_events.columns:
+        if c.lower() in ('category', 'event category', 'event type', 'type'):
+            event_cat_col = c
+            break
+
+    if event_cat_col:
+        df_events['EventCategory'] = df_events[event_cat_col].astype(str).fillna('Uncategorized')
+    else:
+        df_events['EventCategory'] = 'Uncategorized'
+
     return df_staff, df_events
 
 # --- SECURITY ---
@@ -53,6 +67,39 @@ if category_filter:
 
 # --- TABS ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "➕ Add Data", "👤 Staff Details", "🗓️ Event Logs", "🏆 Leaderboard"])
+
+with tab1:  # DASHBOARD
+    st.title("📊 Dashboard")
+
+    # Summary metrics
+    total_events = len(df_events)
+    total_staff = len(df_staff)
+
+    m1, m2 = st.columns(2)
+    m1.metric("Total Events", total_events)
+    m2.metric("Total Staff", total_staff)
+
+    # Staff by Category
+    st.subheader("Staff by Category")
+    staff_cat = df_staff['Category'].value_counts().rename_axis('Category').reset_index(name='Count')
+    if staff_cat.empty:
+        st.info("No staff data available.")
+    else:
+        st.table(staff_cat)
+
+    # Events by Category
+    st.subheader("Events by Category")
+    event_cat_counts = df_events.groupby('EventCategory').size().reset_index(name='Count').sort_values('Count', ascending=False)
+    if event_cat_counts.empty:
+        st.info("No event data available.")
+    else:
+        st.table(event_cat_counts)
+        # simple visualization
+        try:
+            st.bar_chart(event_cat_counts.set_index('EventCategory')['Count'])
+        except Exception:
+            # fallback if plotting fails for any reason
+            st.write(event_cat_counts)
 
 with tab2: # ADD DATA IMPROVEMENTS
     col_a, col_b = st.columns(2)
