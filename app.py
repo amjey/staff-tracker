@@ -10,82 +10,98 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 @st.cache_data(ttl=10)
 def load_data():
-    # Load and clean whitespace
-    df_staff = pd.read_csv(DETAILS_URL).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
-    df_events = pd.read_csv(EVENTS_URL).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    # Load and force strip whitespaces from column headers and data
+    df_staff = pd.read_csv(DETAILS_URL)
+    df_staff.columns = df_staff.columns.str.strip()
+    df_staff = df_staff.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
-    # Remove phantom empty rows
+    df_events = pd.read_csv(EVENTS_URL)
+    df_events.columns = df_events.columns.str.strip()
+    df_events = df_events.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    
+    # Validation: Only count rows that have a Serial Number
     df_staff = df_staff.dropna(subset=['SN'])
     df_events = df_events.dropna(subset=['SN'])
     
+    # Logic for Category (Column F: Leader Badge)
+    # This fixes the 151/731 count issue
+    df_staff['Category'] = df_staff['Leader Badge'].apply(
+        lambda x: "Assist.Technician" if str(x).lower() == "driver" else "Team Leader"
+    )
+    
     return df_staff, df_events
+
+# --- SECURITY ---
+if "auth" not in st.session_state:
+    st.title("🔒 Staff Management Login")
+    if st.text_input("Password", type="password") == "Admin@2026":
+        if st.button("Login"):
+            st.session_state.auth = True
+            st.rerun()
+    st.stop()
 
 df_staff, df_events = load_data()
 
 # --- TABS ---
-tab1, tab2, tab3 = st.tabs(["📊 Location Dashboard", "👤 Staff Details", "🏆 Leaderboard"])
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "👤 Staff Details", "🏆 Leaderboard"])
 
 with tab1:
-    st.title("📊 Event Location Analysis")
+    st.title("📊 Event Location Dashboard")
 
-    # --- 1. STAFF REGISTRATION TOTALS ---
-    # Strictly categorizing by Column F (Leader Badge)
-    drivers = df_staff[df_staff['Leader Badge'].str.lower() == 'driver']
-    t_leaders = df_staff[df_staff['Leader Badge'].str.lower() != 'driver']
-
+    # --- 1. STAFF TOTALS (Fixes the 878/4 error) ---
     st.subheader("Staff Totals")
     s1, s2, s3 = st.columns(3)
-    s1.metric("Total Registered", len(df_staff))
-    s2.metric("Team Leaders", len(t_leaders))
-    s3.metric("Assist. Technicians", len(drivers))
+    
+    total_reg = len(df_staff)
+    assist_techs = len(df_staff[df_staff['Category'] == "Assist.Technician"])
+    team_leaders = total_reg - assist_techs
+    
+    s1.metric("Total Registered", total_reg)
+    s2.metric("Team Leaders", team_leaders)
+    s3.metric("Assist. Technicians", assist_techs)
 
     st.write("---")
 
-    # --- 2. THE NEW LOCATION LOGIC ---
+    # --- 2. UNIQUE EVENTS BY LOCATION ---
     st.subheader("Events by Location")
     
-    # We define a "Unique Event" as a combination of Name + Location + Date
-    # This prevents counting individual staff rows as separate events
-    unique_events = df_events.drop_duplicates(subset=['Event Name', 'Event Location', 'Date'])
+    # We identify a unique event by its Name and Location
+    # This prevents counting all 1735 staff engagements as separate events
+    event_cols = ['Event Name', 'Event Location']
+    # Check if 'Date' exists to make the count even more accurate
+    if 'Date' in df_events.columns:
+        event_cols.append('Date')
+        
+    unique_events_df = df_events.drop_duplicates(subset=event_cols)
     
     m1, m2 = st.columns(2)
-    m1.metric("Total Unique Events", len(unique_events))
+    m1.metric("Total Unique Events", len(unique_events_df))
     m2.metric("Total Staff Engagements", len(df_events))
 
-    # Bar chart showing which location has the most events
-    location_counts = unique_events['Event Location'].value_counts()
-    
-    col_chart, col_data = st.columns([2, 1])
-    with col_chart:
-        st.bar_chart(location_counts)
-    
-    with col_data:
-        st.write("**Events per Location**")
-        st.dataframe(location_counts, use_container_width=True)
+    # Visual Breakdown
+    loc_counts = unique_events_df['Event Location'].value_counts()
+    st.bar_chart(loc_counts)
 
     # --- 3. NESTED FILTERING (SUB-CATEGORIES) ---
     st.write("---")
-    st.subheader("Deep Dive by Location")
+    st.subheader("Location Deep-Dive")
     
-    # Filter 1: Pick Location
-    loc_list = sorted(df_events['Event Location'].unique())
-    selected_loc = st.selectbox("Select a Location to see Events", loc_list)
-
-    # Filter 2: Pick Sub-Category (Event Name) based on that Location
-    loc_filtered_df = df_events[df_events['Event Location'] == selected_loc]
-    event_list = sorted(loc_filtered_df['Event Name'].unique())
-    selected_event = st.selectbox(f"Select Event in {selected_loc}", event_list)
-
-    # Final View
-    final_view = loc_filtered_df[loc_filtered_df['Event Name'] == selected_event]
+    sel_loc = st.selectbox("Select Location", sorted(df_events['Event Location'].unique()))
     
-    st.write(f"#### Staff present at: {selected_event}")
-    st.dataframe(final_view[['SN', 'Name', 'Rank', 'Master Group']], use_container_width=True, hide_index=True)
+    # Filter by Location
+    loc_data = df_events[df_events['Event Location'] == sel_loc]
+    
+    # Show Sub-Categories (Event Names) for that location
+    sel_sub = st.selectbox(f"Select Event at {sel_loc}", sorted(loc_data['Event Name'].unique()))
+    
+    final_view = loc_data[loc_data['Event Name'] == sel_sub]
+    st.write(f"**Staff Present ({len(final_view)}):**")
+    st.dataframe(final_view[['SN', 'Name', 'Rank']], use_container_width=True, hide_index=True)
 
 with tab3:
     st.title("🏆 Leaderboard")
     # Top 5 by row count (Engagements)
-    top_5 = df_events['SN'].value_counts().head(5).reset_index()
-    top_5.columns = ['SN', 'Engagements']
-    top_5 = pd.merge(top_5, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+    top_staff = df_events['SN'].value_counts().head(5).reset_index()
+    top_staff.columns = ['SN', 'Engagements']
+    top_staff = pd.merge(top_staff, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
     st.table(top_staff[['Name', 'Rank', 'Engagements']])
