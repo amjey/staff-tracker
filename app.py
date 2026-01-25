@@ -10,23 +10,21 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 @st.cache_data(ttl=10)
 def load_data():
-    # Load and force strip whitespaces from headers to avoid KeyErrors
+    # Load and force strip whitespaces from column headers to prevent KeyErrors
     df_staff = pd.read_csv(DETAILS_URL)
     df_staff.columns = df_staff.columns.str.strip()
-    df_staff = df_staff.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
     df_events = pd.read_csv(EVENTS_URL)
     df_events.columns = df_events.columns.str.strip()
-    df_events = df_events.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
     # Validation: Filter out completely empty rows
     df_staff = df_staff.dropna(subset=['SN'])
     df_events = df_events.dropna(subset=['SN'])
     
-    # CRITICAL: Categorization Logic for Staff Totals
+    # CRITICAL: Categorization Logic for Staff Totals (Target: 151/731)
     # Drivers = Assist.Technician, everyone else = Team Leader
     df_staff['Category'] = df_staff['Leader Badge'].apply(
-        lambda x: "Assist.Technician" if str(x).lower() == "driver" else "Team Leader"
+        lambda x: "Assist.Technician" if str(x).strip().lower() == "driver" else "Team Leader"
     )
     
     return df_staff, df_events
@@ -51,7 +49,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "👤 Staff Details", "🏆 Leader
 with tab1:
     st.title("📊 Event Location Dashboard")
 
-    # --- 1. STAFF TOTALS (Target: 151 vs 731) ---
+    # --- 1. STAFF TOTALS (Resolves 878/4 Error) ---
     st.subheader("Staff Totals")
     s1, s2, s3 = st.columns(3)
     
@@ -65,11 +63,10 @@ with tab1:
 
     st.write("---")
 
-    # --- 2. UNIQUE EVENTS BY LOCATION ---
-    st.subheader("Events by Location")
+    # --- 2. UNIQUE EVENTS & LOCATION TABLE ---
+    st.subheader("Events Overview")
     
-    # Identify unique events to avoid counting every staff engagement as a separate event
-    # We use 'Event Name' and 'Event Location' to define a single event instance
+    # Identify unique events
     unique_cols = ['Event Name', 'Event Location']
     if 'Date' in df_events.columns:
         unique_cols.append('Date')
@@ -80,34 +77,37 @@ with tab1:
     m1.metric("Total Unique Events", len(unique_events_df))
     m2.metric("Total Staff Engagements", len(df_events))
 
-    # Bar chart of events per location
+    # ADDED: Event Category Table (By Master Group)
+    st.write("#### Event Categories Summary")
+    if 'Master Group' in unique_events_df.columns:
+        cat_summary = unique_events_df['Master Group'].value_counts().reset_index()
+        cat_summary.columns = ['Category (Master Group)', 'Unique Event Count']
+        st.table(cat_summary) # Display as a clean table
+    else:
+        st.warning("Master Group column not found in data.")
+
+    # Location Bar Chart
+    st.write("#### Events by Location")
     loc_counts = unique_events_df['Event Location'].value_counts()
     st.bar_chart(loc_counts)
 
-    # --- 3. LOCATION DEEP-DIVE (SUB-CATEGORIES) ---
+    # --- 3. LOCATION DEEP-DIVE ---
     st.write("---")
     st.subheader("Location Deep-Dive")
     
-    # Dropdowns for drill-down analysis
     sel_loc = st.selectbox("Select Location", sorted(df_events['Event Location'].unique()))
-    
-    # Filter data by selected location
     loc_data = df_events[df_events['Event Location'] == sel_loc]
     
-    # Selection for Sub-Category (specific event name at that location)
     sel_sub = st.selectbox(f"Select Event at {sel_loc}", sorted(loc_data['Event Name'].unique()))
-    
     final_view = loc_data[loc_data['Event Name'] == sel_sub]
-    st.write(f"**Staff Present at {sel_sub} ({len(final_view)}):**")
     
-    # Use fallback column names to prevent KeyError if some are missing
-    display_cols = [c for c in ['SN', 'Name', 'Rank'] if c in final_view.columns]
+    st.write(f"**Staff Present at {sel_sub} ({len(final_view)}):**")
+    display_cols = [c for c in ['SN', 'Name', 'Rank', 'Unit'] if c in final_view.columns]
     st.dataframe(final_view[display_cols], use_container_width=True, hide_index=True)
 
 with tab3:
     st.title("🏆 Leaderboard")
-    # Top 5 by engagement volume
-    top_staff = df_events['SN'].value_counts().head(5).reset_index()
+    top_staff = df_events['SN'].value_counts().head(10).reset_index()
     top_staff.columns = ['SN', 'Engagements']
     top_staff = pd.merge(top_staff, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
     st.table(top_staff[['Name', 'Rank', 'Engagements']])
