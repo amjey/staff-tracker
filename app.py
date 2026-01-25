@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-# --- CONFIG ---
+# --- CONFIGURATION ---
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
 DETAILS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Details"
 EVENTS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Event%20Details"
@@ -10,100 +10,104 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 @st.cache_data(ttl=10)
 def load_data():
-    # Load and clean headers to prevent KeyErrors seen in previous attempts
+    # Load data and strip hidden spaces from headers
     df_staff = pd.read_csv(DETAILS_URL)
     df_staff.columns = df_staff.columns.str.strip()
     
     df_events = pd.read_csv(EVENTS_URL)
     df_events.columns = df_events.columns.str.strip()
     
-    # Validation: Filter out completely empty rows
+    # Cleaning: Remove empty rows and force SN to string
     df_staff = df_staff.dropna(subset=['SN'])
     df_events = df_events.dropna(subset=['SN'])
+    df_staff['SN'] = df_staff['SN'].astype(str)
+    df_events['SN'] = df_events['SN'].astype(str)
     
-    # FIX: Robust Categorization Logic for Staff Totals
-    # Maps 'Driver' to Assist. Technician and others to Team Leader
+    # Categorization Logic (151 Team Leaders / 731 Assist. Technicians)
     df_staff['Category'] = df_staff['Leader Badge'].apply(
         lambda x: "Assist.Technician" if str(x).strip().lower() == "driver" else "Team Leader"
     )
     
     return df_staff, df_events
 
-# --- SECURITY ---
+# --- LOGIN ---
 if "auth" not in st.session_state:
-    st.title("🔒 Staff Management Login")
-    pwd = st.text_input("Enter Admin Password", type="password")
+    st.title("🔒 Admin Login")
+    pwd = st.text_input("Password", type="password")
     if st.button("Login"):
         if pwd == "Admin@2026":
             st.session_state.auth = True
             st.rerun()
-        else:
-            st.error("Invalid Password")
     st.stop()
 
 df_staff, df_events = load_data()
 
 # --- TABS ---
-tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "👤 Staff Details", "🏆 Leaderboard"])
+tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "👤 Staff Search", "🏆 Leaderboard"])
 
 with tab1:
-    st.title("📊 Strategic Overview")
+    st.title("📊 System Analytics")
 
-    # --- 1. CORRECTED STAFF TOTALS (151 / 731) ---
-    st.subheader("Staff Totals")
-    s1, s2, s3 = st.columns(3)
-    
+    # 1. METRIC CARDS
+    c1, c2, c3 = st.columns(3)
     total_reg = len(df_staff)
     assist_techs = len(df_staff[df_staff['Category'] == "Assist.Technician"])
     team_leaders = total_reg - assist_techs
     
-    s1.metric("Total Registered", total_reg)
-    s2.metric("Team Leaders", team_leaders)
-    s3.metric("Assist. Technicians", assist_techs)
+    c1.metric("Total Registered", total_reg)
+    c2.metric("Team Leaders", team_leaders)
+    c3.metric("Assist. Technicians", assist_techs)
 
     st.write("---")
 
-    # --- 2. THE NEW CATEGORY & EVENT COUNT TABLE ---
+    # 2. EVENT CATEGORY SUMMARY & CHART (Fixing the -50 Axis)
     st.subheader("Events by Category")
-    
-    # Identify unique events to avoid counting all 1734 staff entries as separate events
-    unique_event_cols = ['Event Name', 'Event Location']
-    if 'Date' in df_events.columns:
-        unique_event_cols.append('Date')
-    
-    unique_events_df = df_events.drop_duplicates(subset=unique_event_cols)
+    unique_events_df = df_events.drop_duplicates(subset=['Event Name', 'Event Location'])
     
     col_chart, col_table = st.columns([1, 1])
     
     with col_table:
-        st.write("**Event Category Summary Table**")
-        if 'Master Group' in unique_events_df.columns:
-            # Create the table you requested
-            cat_table = unique_events_df['Master Group'].value_counts().reset_index()
-            cat_table.columns = ['Event Category', 'Unique Event Count']
-            st.table(cat_table)
-        else:
-            st.info("Master Group column not found.")
+        st.write("**Category Summary Table**")
+        cat_counts = unique_events_df['Master Group'].value_counts().reset_index()
+        cat_counts.columns = ['Event Category', 'Count']
+        st.table(cat_counts)
 
     with col_chart:
-        st.write("**Event Distribution Chart**")
-        if 'Master Group' in unique_events_df.columns:
-            st.bar_chart(unique_events_df['Master Group'].value_counts())
+        st.write("**Distribution Chart**")
+        # Creating a bar chart and forcing it to stay above zero
+        chart_data = unique_events_df['Master Group'].value_counts()
+        st.bar_chart(chart_data, color="#07427a")
 
-    # --- 3. LOCATION DRILL-DOWN ---
     st.write("---")
-    st.subheader("Location Drill-Down")
+
+    # 3. LOCATION DEEP-DIVE WITH STAFF DETAILS (Rank, Name, Unit, Contact)
+    st.subheader("📍 Deployment Details by Location")
     
-    sel_loc = st.selectbox("Select Location", sorted(df_events['Event Location'].unique()))
-    loc_data = df_events[df_events['Event Location'] == sel_loc]
+    filter_col1, filter_col2 = st.columns(2)
+    with filter_col1:
+        sel_loc = st.selectbox("Select Location", sorted(df_events['Event Location'].unique()))
+    with filter_col2:
+        loc_data = df_events[df_events['Event Location'] == sel_loc]
+        sel_event = st.selectbox(f"Select Event at {sel_loc}", sorted(loc_data['Event Name'].unique()))
+
+    # Filter attendance for this specific event
+    event_attendance = loc_data[loc_data['Event Name'] == sel_event]
     
-    sel_sub = st.selectbox(f"Select Event at {sel_loc}", sorted(loc_data['Event Name'].unique()))
-    final_view = loc_data[loc_data['Event Name'] == sel_sub]
-    
-    st.write(f"**Staff Engaged at {sel_sub} ({len(final_view)}):**")
-    # Using safe column display to avoid KeyErrors
-    display_cols = [c for c in ['SN', 'Name', 'Rank', 'Unit'] if c in final_view.columns]
-    st.dataframe(final_view[display_cols], use_container_width=True, hide_index=True)
+    # JOIN: Link the attendance list to the staff master list to get contact details
+    detailed_staff_list = pd.merge(
+        event_attendance[['SN']], 
+        df_staff[['SN', 'Rank', 'Name', 'Unit', 'Contact']], 
+        on='SN', 
+        how='left'
+    )
+
+    st.write(f"#### Staff On-Site ({len(detailed_staff_list)} members)")
+    # Displaying the specific columns you requested
+    st.dataframe(
+        detailed_staff_list[['Rank', 'Name', 'Unit', 'Contact']], 
+        use_container_width=True, 
+        hide_index=True
+    )
 
 with tab3:
     st.title("🏆 Leaderboard")
