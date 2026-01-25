@@ -12,18 +12,20 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 @st.cache_data(ttl=5)
 def load_data():
+    # Load and immediately strip whitespace from column names
     df_staff = pd.read_csv(DETAILS_URL).rename(columns=lambda x: x.strip())
     df_events = pd.read_csv(EVENTS_URL).rename(columns=lambda x: x.strip())
     
-    # Standardize SN formatting to ensure matches
+    # Fix 'None' and matching errors: Standardize SNs as clean strings
     for df in [df_staff, df_events]:
         df['SN'] = df['SN'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
-    # Ensure Duration is numeric for calculations
-    if 'Duration' in df_events.columns:
-        df_events['Duration'] = pd.to_numeric(df_events['Duration'], errors='coerce').fillna(0)
+    # Ensure Duration is numeric for profile math
+    dur_col = 'Event duration(Mins)' if 'Event duration(Mins)' in df_events.columns else 'Duration'
+    if dur_col in df_events.columns:
+        df_events[dur_col] = pd.to_numeric(df_events[dur_col], errors='coerce').fillna(0)
 
-    # Logic for Role Totals
+    # UPDATED CATEGORIZATION logic
     def categorize_staff(badge):
         badge_str = str(badge).strip()
         if badge_str in ["Assist.Technician", "Driver"]:
@@ -33,19 +35,9 @@ def load_data():
         return "Unassigned"
 
     df_staff['Category'] = df_staff['Leader Badge'].apply(categorize_staff)
-    return df_staff, df_events
+    return df_staff, df_events, dur_col
 
-# --- SECURITY ---
-if "auth" not in st.session_state:
-    st.title("🔒 Admin Login")
-    pwd = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if pwd == "Admin@2026":
-            st.session_state.auth = True
-            st.rerun()
-    st.stop()
-
-df_staff, df_events = load_data()
+df_staff, df_events, dur_col = load_data()
 
 # --- TABS NAVIGATION ---
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -61,98 +53,94 @@ with tab1:
     c3.metric("Assist. Technicians", len(df_staff[df_staff['Category'] == "Assist.Technician"]))
 
     st.write("---")
-    st.subheader("Events by Category")
-    unique_events_df = df_events.drop_duplicates(subset=['Event Name', 'Event Location', 'Date'])
+    # Using 'Event Name' for deduplication to avoid KeyError on missing 'Date' column
+    unique_events = df_events.drop_duplicates(subset=['Event Name', 'Event Location'])
     
     col_chart, col_table = st.columns([1, 1])
     with col_table:
-        cat_counts = unique_events_df['Master Group'].value_counts().reset_index()
+        cat_counts = unique_events['Master Group'].value_counts().reset_index()
         cat_counts.columns = ['Event Category', 'Count']
         st.dataframe(cat_counts, use_container_width=True, hide_index=True)
     with col_chart:
-        st.bar_chart(unique_events_df['Master Group'].value_counts(), color="#0072B2")
+        st.bar_chart(unique_events['Master Group'].value_counts(), color="#0072B2")
 
-# --- TAB 2: STAFF DETAILS (NEW PROFILE VIEW) ---
+# --- TAB 2: STAFF DETAILS (SEARCH & PROFILES) ---
 with tab2:
-    st.title("👤 Staff Directory & Profiles")
+    st.title("👤 Staff Details & History")
     
-    # Search Bar
-    search_sn = st.text_input("🔍 Search Staff by Serial Number (SN)", placeholder="Enter SN here...")
+    # SN Search Bar
+    search_sn = st.text_input("🔍 Search by Serial Number (SN)", placeholder="Enter SN (e.g., 101)...")
     
     if search_sn:
-        # Filter profile
-        profile = df_staff[df_staff['SN'] == search_sn]
-        
-        if not profile.empty:
-            p = profile.iloc[0]
-            st.markdown(f"### Profile: {p['Name']}")
+        person = df_staff[df_staff['SN'] == search_sn]
+        if not person.empty:
+            p = person.iloc[0]
+            st.header(f"Profile: {p['Name']}")
             
-            # Personal Details Cards
+            # Row 1: Info Cards
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Rank", p['Rank'])
             m2.metric("Unit", p['Unit'])
             m3.metric("Contact", p['Contact'])
-            m4.metric("Badge", p['Leader Badge'])
+            m4.metric("Role", p['Category'])
             
-            # Engagement Metrics
-            staff_events = df_events[df_events['SN'] == search_sn]
-            total_events = len(staff_events)
-            total_mins = staff_events['Duration'].sum() if 'Duration' in staff_events.columns else 0
+            # Row 2: Performance Metrics
+            history = df_events[df_events['SN'] == search_sn]
+            total_events = len(history)
+            total_mins = history[dur_col].sum()
             
             st.write("---")
             e1, e2 = st.columns(2)
             e1.metric("Total Events Attended", total_events)
-            e2.metric("Total Duration (Mins)", f"{total_mins} mins")
+            e2.metric("Total Duration", f"{total_mins} Mins")
             
-            st.subheader("Event History")
-            if total_events > 0:
-                st.dataframe(staff_events[['Date', 'Event Name', 'Event Location', 'Duration']], 
-                             use_container_width=True, hide_index=True)
-            else:
-                st.info("No event history found for this staff member.")
+            st.subheader("Personal Event History")
+            # Display relevant event columns - adjust names if they differ in your sheet
+            display_cols = [c for c in ['Event Date', 'Event Name', 'Event Location', dur_col] if c in history.columns]
+            st.dataframe(history[display_cols], use_container_width=True, hide_index=True)
         else:
-            st.error("No staff member found with that SN.")
-    
+            st.warning("No staff member found with that SN. Please check the directory below.")
+
     st.write("---")
-    st.subheader("All Staff Directory")
+    st.subheader("All Registered Staff")
     st.dataframe(df_staff[['SN', 'Rank', 'Name', 'Unit', 'Contact', 'Leader Badge']], 
                  use_container_width=True, hide_index=True)
 
 # --- TAB 3: ADD DATA (FORMS) ---
 with tab3:
-    st.title("➕ Data Entry")
+    st.title("➕ Data Management")
     col_a, col_b = st.columns(2)
     with col_a:
         st.subheader("Add Staff Info")
         with st.form("staff_form"):
-            s_sn = st.text_input("SN")
-            s_name = st.text_input("Full Name")
-            s_rank = st.text_input("Rank")
-            s_unit = st.text_input("Unit")
-            s_contact = st.text_input("Contact")
-            s_badge = st.selectbox("Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
-            if st.form_submit_button("Submit"):
-                st.link_button("Paste to Sheet", SHEET_EDIT_URL)
+            sn = st.text_input("SN")
+            name = st.text_input("Full Name")
+            rank = st.text_input("Rank")
+            unit = st.text_input("Unit")
+            contact = st.text_input("Contact")
+            badge = st.selectbox("Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
+            if st.form_submit_button("Save Staff"):
+                st.link_button("Open Sheet to Paste", SHEET_EDIT_URL)
 
     with col_b:
         st.subheader("Log New Event")
         with st.form("event_form"):
             e_name = st.text_input("Event Name")
             e_loc = st.text_input("Event Location")
-            e_date = st.date_input("Event Date", datetime.now())
-            e_dur = st.number_input("Duration (Mins)", min_value=1)
-            e_staff = st.multiselect("Select Staff", options=df_staff['Name'].tolist())
+            e_date = st.date_input("Event Date")
+            e_dur = st.number_input("Event duration(Mins)", min_value=1)
+            e_staff = st.multiselect("Select Staff Members", options=df_staff['Name'].tolist())
             if st.form_submit_button("Log Event"):
-                st.link_button("Paste to Sheet", SHEET_EDIT_URL)
+                st.link_button("Open Sheet to Paste", SHEET_EDIT_URL)
 
-# --- TAB 4 & 5: LOGS & LEADERBOARD ---
+# --- TABS 4 & 5: RESTORED LOGS & LEADERBOARD ---
 with tab4:
     st.title("🗓️ Master Event Logs")
     st.dataframe(df_events, use_container_width=True, hide_index=True)
 
 with tab5:
     st.title("🏆 Leaderboard")
-    top_staff = df_events['SN'].value_counts().head(10).reset_index()
-    top_staff.columns = ['SN', 'Engagements']
-    top_staff = pd.merge(top_staff, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-    st.dataframe(top_staff[['Name', 'Rank', 'Engagements']], use_container_width=True, hide_index=True)
+    top = df_events['SN'].value_counts().head(10).reset_index()
+    top.columns = ['SN', 'Engagements']
+    top_detailed = pd.merge(top, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+    st.dataframe(top_detailed[['Name', 'Rank', 'Engagements']], use_container_width=True, hide_index=True)
