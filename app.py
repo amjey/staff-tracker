@@ -69,7 +69,7 @@ with tabs[1]:
     with f1:
         # We filter the TABLE based on this, but NOT the Profile search
         role_filter = st.multiselect("Filter Table by Role:", 
-                                     options=["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"], 
+                                     options=["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"]
     with f2:
         # Search SN - Key ensures focus stays here
         search_sn = st.text_input("🔍 Search by SN to view Profile", key="profile_search")
@@ -145,4 +145,5 @@ with tabs[4]:
     top.columns = ['SN', 'Engagements']
     board = pd.merge(top, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
     st.dataframe(board[['Name', 'Rank', 'Engagements']], use_container_width=True, hide_index=True)
+
 
