@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 
 # --- CONFIG ---
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
@@ -15,96 +14,78 @@ def load_data():
     df_staff = pd.read_csv(DETAILS_URL).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     df_events = pd.read_csv(EVENTS_URL).apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
-    # Validation: Remove rows where SN is empty to get true counts
+    # Remove phantom empty rows
     df_staff = df_staff.dropna(subset=['SN'])
     df_events = df_events.dropna(subset=['SN'])
     
-    # Ensure SN is string
-    df_staff['SN'] = df_staff['SN'].astype(str)
-    df_events['SN'] = df_events['SN'].astype(str)
-    
     return df_staff, df_events
-
-# --- SECURITY ---
-if "auth" not in st.session_state:
-    st.title("🔒 Staff Management Login")
-    pwd = st.text_input("Enter Admin Password", type="password")
-    if st.button("Login"):
-        if pwd == "Admin@2026":
-            st.session_state.auth = True
-            st.rerun()
-        else:
-            st.error("Invalid Password")
-    st.stop()
 
 df_staff, df_events = load_data()
 
 # --- TABS ---
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Dashboard", "👤 Staff Details", "🗓️ Event Logs", "🏆 Leaderboard", "⚙️ Admin"])
+tab1, tab2, tab3 = st.tabs(["📊 Location Dashboard", "👤 Staff Details", "🏆 Leaderboard"])
 
 with tab1:
-    st.title("📊 System Dashboard")
-    
-    # --- 1. THE STAFF REGISTERED SECTION ---
-    st.subheader("Total Registered Staff")
+    st.title("📊 Event Location Analysis")
+
+    # --- 1. STAFF REGISTRATION TOTALS ---
+    # Strictly categorizing by Column F (Leader Badge)
+    drivers = df_staff[df_staff['Leader Badge'].str.lower() == 'driver']
+    t_leaders = df_staff[df_staff['Leader Badge'].str.lower() != 'driver']
+
+    st.subheader("Staff Totals")
     s1, s2, s3 = st.columns(3)
-    
-    # Rule: Column F (Leader Badge) == "Driver" -> Assist. Technician
-    drivers = df_staff[df_staff['Leader Badge'].str.contains('Driver', case=False, na=False)]
-    t_leaders = df_staff[~df_staff['Leader Badge'].str.contains('Driver', case=False, na=False)]
-    
-    s1.metric("Total Staff", len(df_staff))
+    s1.metric("Total Registered", len(df_staff))
     s2.metric("Team Leaders", len(t_leaders))
     s3.metric("Assist. Technicians", len(drivers))
 
     st.write("---")
 
-    # --- 2. THE EVENT ENGAGEMENT SECTION (WITH LOCATION) ---
-    st.subheader("Event Engagements & Locations")
+    # --- 2. THE NEW LOCATION LOGIC ---
+    st.subheader("Events by Location")
     
-    # Filters: Location -> Master Category -> Sub Category
-    c_loc, c_mast, c_sub = st.columns(3)
+    # We define a "Unique Event" as a combination of Name + Location + Date
+    # This prevents counting individual staff rows as separate events
+    unique_events = df_events.drop_duplicates(subset=['Event Name', 'Event Location', 'Date'])
     
-    with c_loc:
-        locations = sorted(df_events['Event Location'].dropna().unique())
-        sel_loc = st.selectbox("1. Select Location", ["All Locations"] + locations)
-    
-    # Filter by Location first
-    work_df = df_events.copy()
-    if sel_loc != "All Locations":
-        work_df = work_df[work_df['Event Location'] == sel_loc]
-        
-    with c_mast:
-        master_groups = sorted(work_df['Master Group'].dropna().unique())
-        sel_mast = st.selectbox("2. Select Category", ["All Categories"] + master_groups)
-        
-    if sel_mast != "All Categories":
-        work_df = work_df[work_df['Master Group'] == sel_mast]
-        
-    with c_sub:
-        sub_events = sorted(work_df['Event Name'].dropna().unique())
-        sel_sub = st.selectbox("3. Select Sub-Category", ["All Sub-Events"] + sub_events)
+    m1, m2 = st.columns(2)
+    m1.metric("Total Unique Events", len(unique_events))
+    m2.metric("Total Staff Engagements", len(df_events))
 
-    if sel_sub != "All Sub-Events":
-        work_df = work_df[work_df['Event Name'] == sel_sub]
-
-    # Metrics for the current selection
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Engagements", len(work_df))
-    m2.metric("Unique Staff", work_df['SN'].nunique())
-    m3.metric("Filtered Location", sel_loc if sel_loc != "All Locations" else "Global")
-
-    st.write("#### Resulting Data")
-    st.dataframe(work_df, use_container_width=True, hide_index=True)
-
-with tab4:
-    st.title("🏆 Filtered Leaderboard")
-    st.write(f"Showing top performers for: **{sel_loc}** | **{sel_mast}**")
+    # Bar chart showing which location has the most events
+    location_counts = unique_events['Event Location'].value_counts()
     
-    # Top 5 based on the active filters in Tab 1
-    leader_counts = work_df['SN'].value_counts().head(5).reset_index()
-    leader_counts.columns = ['SN', 'Count']
+    col_chart, col_data = st.columns([2, 1])
+    with col_chart:
+        st.bar_chart(location_counts)
     
-    # Join with names
-    leader_final = pd.merge(leader_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-    st.table(leader_final[['Name', 'Rank', 'Count']])
+    with col_data:
+        st.write("**Events per Location**")
+        st.dataframe(location_counts, use_container_width=True)
+
+    # --- 3. NESTED FILTERING (SUB-CATEGORIES) ---
+    st.write("---")
+    st.subheader("Deep Dive by Location")
+    
+    # Filter 1: Pick Location
+    loc_list = sorted(df_events['Event Location'].unique())
+    selected_loc = st.selectbox("Select a Location to see Events", loc_list)
+
+    # Filter 2: Pick Sub-Category (Event Name) based on that Location
+    loc_filtered_df = df_events[df_events['Event Location'] == selected_loc]
+    event_list = sorted(loc_filtered_df['Event Name'].unique())
+    selected_event = st.selectbox(f"Select Event in {selected_loc}", event_list)
+
+    # Final View
+    final_view = loc_filtered_df[loc_filtered_df['Event Name'] == selected_event]
+    
+    st.write(f"#### Staff present at: {selected_event}")
+    st.dataframe(final_view[['SN', 'Name', 'Rank', 'Master Group']], use_container_width=True, hide_index=True)
+
+with tab3:
+    st.title("🏆 Leaderboard")
+    # Top 5 by row count (Engagements)
+    top_5 = df_events['SN'].value_counts().head(5).reset_index()
+    top_5.columns = ['SN', 'Engagements']
+    top_5 = pd.merge(top_5, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+    st.table(top_staff[['Name', 'Rank', 'Engagements']])
