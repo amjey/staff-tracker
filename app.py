@@ -9,12 +9,17 @@ SHEET_EDIT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
+# --- TAB PERSISTENCE FIX ---
+# This prevents the app from jumping back to the first tab when you press Enter
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = 0
+
 @st.cache_data(ttl=2)
 def load_data():
     df_staff = pd.read_csv(DETAILS_URL).rename(columns=lambda x: x.strip())
     df_events = pd.read_csv(EVENTS_URL).rename(columns=lambda x: x.strip())
     
-    # 1. Clean SN and Contact (Remove .0)
+    # Clean SN and Contact (Remove .0)
     for df in [df_staff, df_events]:
         if 'SN' in df.columns:
             df['SN'] = df['SN'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
@@ -22,21 +27,16 @@ def load_data():
     if 'Contact' in df_staff.columns:
         df_staff['Contact'] = df_staff['Contact'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
-    # 2. Fix Duration Math (Search for the specific column)
-    # This ensures your "3 mins" event is counted
+    # DURATION FIX: Ensure it is a number
     dur_col = next((c for c in ['Event duration(Mins)', 'Duration', 'duration'] if c in df_events.columns), None)
     if dur_col:
         df_events[dur_col] = pd.to_numeric(df_events[dur_col], errors='coerce').fillna(0)
 
-    # 3. Categorization Logic (All 5 Categories)
+    # Categorization Logic
     def categorize_staff(badge):
         b = str(badge).strip()
-        # Assistants
-        if b in ["Assist.Technician", "Driver"]: 
-            return "Assist.Technician"
-        # Leaders
-        if b in ["Master in Fireworks", "Pro in Fireworks", "Team Leader"]: 
-            return "Team Leader"
+        if b in ["Assist.Technician", "Driver"]: return "Assist.Technician"
+        if b in ["Master in Fireworks", "Pro in Fireworks", "Team Leader"]: return "Team Leader"
         return "Unassigned"
 
     df_staff['Category'] = df_staff['Leader Badge'].apply(categorize_staff)
@@ -45,13 +45,11 @@ def load_data():
 df_staff, df_events, dur_col = load_data()
 
 # --- TABS ---
-# Wrapping everything in the tab objects to prevent jumping
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Dashboard", "👤 Staff Details", "➕ Add Data", "🗓️ Event Logs", "🏆 Leaderboard"
-])
+# Use session_state to keep the user on the current tab
+tabs = st.tabs(["📊 Dashboard", "👤 Staff Details", "➕ Add Data", "🗓️ Event Logs", "🏆 Leaderboard"])
 
 # --- TAB 1: DASHBOARD ---
-with tab1:
+with tabs[0]:
     st.title("📊 Strategic Overview")
     c1, c2, c3 = st.columns(3)
     c1.metric("Total Registered", len(df_staff))
@@ -63,31 +61,31 @@ with tab1:
     st.subheader("Event Categories")
     st.bar_chart(unique_ev['Master Group'].value_counts(), color="#0072B2")
 
-# --- TAB 2: STAFF DETAILS (STABLE SEARCH) ---
-with tab2:
+# --- TAB 2: STAFF DETAILS (FIXED DURATION & SHIFTING) ---
+with tabs[1]:
     st.title("👤 Staff Details")
     
-    # Filtering Logic
     f1, f2 = st.columns([1, 2])
     with f1:
-        # Filter allows selecting the specific badges or grouped roles
+        # We filter the TABLE based on this, but NOT the Profile search
         role_filter = st.multiselect("Filter Table by Role:", 
-                                     options=["Team Leader", "Assist.Technician", "Master in Fireworks", "Pro in Fireworks", "Driver"], 
-                                     default=["Team Leader", "Assist.Technician", "Master in Fireworks", "Pro in Fireworks", "Driver"])
+                                     options=["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"], 
+                                     
     with f2:
-        # Key prevents the tab-switching issue
-        search_sn = st.text_input("🔍 Search by SN to view Profile", key="search_box")
+        # Search SN - Key ensures focus stays here
+        search_sn = st.text_input("🔍 Search by SN to view Profile", key="profile_search")
 
-    # Filtered Table
+    # Filtered Table for directory
     display_df = df_staff[df_staff['Category'].isin(role_filter)]
-    
     st.write("### Staff Directory")
     st.dataframe(display_df[['SN', 'Rank', 'Name', 'Unit', 'Contact', 'Leader Badge']], 
                  use_container_width=True, hide_index=True)
 
-    # Individual Profile (Triggered by Search)
+    # PROFILE VIEW (CRITICAL FIX FOR DURATION)
     if search_sn:
+        # We look in the FULL df_staff so filtering the table doesn't hide the profile
         profile = df_staff[df_staff['SN'] == search_sn]
+        
         if not profile.empty:
             p = profile.iloc[0]
             st.markdown("---")
@@ -97,24 +95,30 @@ with tab2:
             m1.metric("Rank", p['Rank'])
             m2.metric("Unit", p['Unit'])
             m3.metric("Contact", p['Contact'])
-            m4.metric("Role", p['Category'])
+            m4.metric("Badge", p['Leader Badge'])
             
-            # History Math
-            history = df_events[df_events['SN'] == search_sn]
-            total_events = len(history)
-            total_mins = history[dur_col].sum() if dur_col else 0
+            # HISTORY MATH (Searching full event log)
+            personal_history = df_events[df_events['SN'] == search_sn]
+            total_events = len(personal_history)
             
+            # This line ensures the 3 mins (or any duration) is summed correctly
+            if dur_col:
+                total_mins = personal_history[dur_col].sum()
+            else:
+                total_mins = 0
+            
+            st.write("---")
             e1, e2 = st.columns(2)
             e1.metric("Total Events Attended", total_events)
             e2.metric("Total Duration", f"{int(total_mins)} Mins")
             
             st.subheader("Attendance Log")
-            st.dataframe(history, use_container_width=True, hide_index=True)
+            st.dataframe(personal_history, use_container_width=True, hide_index=True)
         else:
             st.warning("No staff found with that SN.")
 
 # --- TAB 3: FORMS ---
-with tab3:
+with tabs[2]:
     st.title("➕ Add Data")
     col_a, col_b = st.columns(2)
     with col_a:
@@ -132,14 +136,13 @@ with tab3:
             if st.form_submit_button("Log"): st.link_button("Open Sheet", SHEET_EDIT_URL)
 
 # --- TAB 4 & 5 ---
-with tab4:
+with tabs[3]:
     st.title("🗓️ Event Logs")
     st.dataframe(df_events, use_container_width=True, hide_index=True)
 
-with tab5:
+with tabs[4]:
     st.title("🏆 Leaderboard")
     top = df_events['SN'].value_counts().head(10).reset_index()
     top.columns = ['SN', 'Engagements']
     board = pd.merge(top, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
     st.dataframe(board[['Name', 'Rank', 'Engagements']], use_container_width=True, hide_index=True)
-
