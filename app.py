@@ -10,7 +10,7 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 @st.cache_data(ttl=10)
 def load_data():
-    # Load and force strip whitespaces from column headers to prevent KeyErrors
+    # Load and clean headers to prevent KeyErrors seen in previous attempts
     df_staff = pd.read_csv(DETAILS_URL)
     df_staff.columns = df_staff.columns.str.strip()
     
@@ -21,8 +21,8 @@ def load_data():
     df_staff = df_staff.dropna(subset=['SN'])
     df_events = df_events.dropna(subset=['SN'])
     
-    # CRITICAL: Categorization Logic for Staff Totals (Target: 151/731)
-    # Drivers = Assist.Technician, everyone else = Team Leader
+    # FIX: Robust Categorization Logic for Staff Totals
+    # Maps 'Driver' to Assist. Technician and others to Team Leader
     df_staff['Category'] = df_staff['Leader Badge'].apply(
         lambda x: "Assist.Technician" if str(x).strip().lower() == "driver" else "Team Leader"
     )
@@ -47,9 +47,9 @@ df_staff, df_events = load_data()
 tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "👤 Staff Details", "🏆 Leaderboard"])
 
 with tab1:
-    st.title("📊 Event Location Dashboard")
+    st.title("📊 Strategic Overview")
 
-    # --- 1. STAFF TOTALS (Resolves 878/4 Error) ---
+    # --- 1. CORRECTED STAFF TOTALS (151 / 731) ---
     st.subheader("Staff Totals")
     s1, s2, s3 = st.columns(3)
     
@@ -63,37 +63,36 @@ with tab1:
 
     st.write("---")
 
-    # --- 2. UNIQUE EVENTS & LOCATION TABLE ---
-    st.subheader("Events Overview")
+    # --- 2. THE NEW CATEGORY & EVENT COUNT TABLE ---
+    st.subheader("Events by Category")
     
-    # Identify unique events
-    unique_cols = ['Event Name', 'Event Location']
+    # Identify unique events to avoid counting all 1734 staff entries as separate events
+    unique_event_cols = ['Event Name', 'Event Location']
     if 'Date' in df_events.columns:
-        unique_cols.append('Date')
+        unique_event_cols.append('Date')
     
-    unique_events_df = df_events.drop_duplicates(subset=unique_cols)
+    unique_events_df = df_events.drop_duplicates(subset=unique_event_cols)
     
-    m1, m2 = st.columns(2)
-    m1.metric("Total Unique Events", len(unique_events_df))
-    m2.metric("Total Staff Engagements", len(df_events))
+    col_chart, col_table = st.columns([1, 1])
+    
+    with col_table:
+        st.write("**Event Category Summary Table**")
+        if 'Master Group' in unique_events_df.columns:
+            # Create the table you requested
+            cat_table = unique_events_df['Master Group'].value_counts().reset_index()
+            cat_table.columns = ['Event Category', 'Unique Event Count']
+            st.table(cat_table)
+        else:
+            st.info("Master Group column not found.")
 
-    # ADDED: Event Category Table (By Master Group)
-    st.write("#### Event Categories Summary")
-    if 'Master Group' in unique_events_df.columns:
-        cat_summary = unique_events_df['Master Group'].value_counts().reset_index()
-        cat_summary.columns = ['Category (Master Group)', 'Unique Event Count']
-        st.table(cat_summary) # Display as a clean table
-    else:
-        st.warning("Master Group column not found in data.")
+    with col_chart:
+        st.write("**Event Distribution Chart**")
+        if 'Master Group' in unique_events_df.columns:
+            st.bar_chart(unique_events_df['Master Group'].value_counts())
 
-    # Location Bar Chart
-    st.write("#### Events by Location")
-    loc_counts = unique_events_df['Event Location'].value_counts()
-    st.bar_chart(loc_counts)
-
-    # --- 3. LOCATION DEEP-DIVE ---
+    # --- 3. LOCATION DRILL-DOWN ---
     st.write("---")
-    st.subheader("Location Deep-Dive")
+    st.subheader("Location Drill-Down")
     
     sel_loc = st.selectbox("Select Location", sorted(df_events['Event Location'].unique()))
     loc_data = df_events[df_events['Event Location'] == sel_loc]
@@ -101,7 +100,8 @@ with tab1:
     sel_sub = st.selectbox(f"Select Event at {sel_loc}", sorted(loc_data['Event Name'].unique()))
     final_view = loc_data[loc_data['Event Name'] == sel_sub]
     
-    st.write(f"**Staff Present at {sel_sub} ({len(final_view)}):**")
+    st.write(f"**Staff Engaged at {sel_sub} ({len(final_view)}):**")
+    # Using safe column display to avoid KeyErrors
     display_cols = [c for c in ['SN', 'Name', 'Rank', 'Unit'] if c in final_view.columns]
     st.dataframe(final_view[display_cols], use_container_width=True, hide_index=True)
 
