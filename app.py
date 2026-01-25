@@ -72,8 +72,8 @@ with tab2:
     with f1:
         # Filter allows selecting the specific badges or grouped roles
         role_filter = st.multiselect("Filter Table by Role:", 
-                                     options=["Team Leader", "Assist.Technician"], 
-                                     default=["Team Leader", "Assist.Technician"])
+                                     options=["Team Leader", "Assist.Technician", "Master in Fireworks", "Pro in Fireworks", "Driver"], 
+                                     default=["Team Leader", "Assist.Technician", "Master in Fireworks", "Pro in Fireworks", "Driver"])
     with f2:
         # Key prevents the tab-switching issue
         search_sn = st.text_input("🔍 Search by SN to view Profile", key="search_box")
@@ -142,3 +142,4 @@ with tab5:
     top.columns = ['SN', 'Engagements']
     board = pd.merge(top, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
     st.dataframe(board[['Name', 'Rank', 'Engagements']], use_container_width=True, hide_index=True)
+
