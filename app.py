@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 # --- CONFIGURATION ---
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
@@ -11,15 +12,14 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 @st.cache_data(ttl=5)
 def load_data():
-    # Load and clean headers
     df_staff = pd.read_csv(DETAILS_URL).rename(columns=lambda x: x.strip())
     df_events = pd.read_csv(EVENTS_URL).rename(columns=lambda x: x.strip())
     
-    # Clean SNs to ensure successful matching (removes 'None' issue)
+    # Fix 'None' values: Clean SNs for matching
     for df in [df_staff, df_events]:
         df['SN'] = df['SN'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
     
-    # --- YOUR UPDATED STAFF COUNT LOGIC ---
+    # --- UPDATED STAFF CATEGORIZATION ---
     def categorize_staff(badge):
         badge_str = str(badge).strip()
         if badge_str in ["Assist.Technician", "Driver"]:
@@ -31,16 +31,14 @@ def load_data():
     df_staff['Category'] = df_staff['Leader Badge'].apply(categorize_staff)
     return df_staff, df_events
 
-# --- SECURITY ---
+# --- LOGIN ---
 if "auth" not in st.session_state:
     st.title("🔒 Admin Login")
-    pwd = st.text_input("Enter Admin Password", type="password")
+    pwd = st.text_input("Password", type="password")
     if st.button("Login"):
         if pwd == "Admin@2026":
             st.session_state.auth = True
             st.rerun()
-        else:
-            st.error("Invalid Password")
     st.stop()
 
 df_staff, df_events = load_data()
@@ -68,39 +66,48 @@ with tab1:
     col_chart, col_table = st.columns([1, 1])
 
     with col_table:
-        st.write("**Category Summary Table**")
         cat_counts = unique_events_df['Master Group'].value_counts().reset_index()
         cat_counts.columns = ['Event Category', 'Count']
+        # hide_index=True removes the "0, 1, 2" index column
         st.dataframe(cat_counts, use_container_width=True, hide_index=True)
 
     with col_chart:
-        st.write("**Distribution Chart**")
         chart_data = unique_events_df['Master Group'].value_counts()
         st.bar_chart(chart_data, color="#0072B2")
 
-# --- TAB 2: ADD DATA (FORMS) ---
+# --- TAB 2: ADD DATA (UPDATED FORMS) ---
 with tab2:
-    st.title("➕ Data Management")
+    st.title("➕ Data Entry")
     col_a, col_b = st.columns(2)
+    
     with col_a:
         st.subheader("Add Staff Info")
         with st.form("staff_form"):
-            st.text_input("SN")
-            st.text_input("Full Name")
-            st.text_input("Rank")
-            st.selectbox("Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
+            s_sn = st.text_input("SN")
+            s_name = st.text_input("Full Name")
+            s_rank = st.text_input("Rank")
+            s_unit = st.text_input("Unit") # Added missing field
+            s_contact = st.text_input("Contact") # Added missing field
+            s_badge = st.selectbox("Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
             if st.form_submit_button("Submit Staff"):
-                st.link_button("Paste into Google Sheets", SHEET_EDIT_URL)
+                st.info("Copy data and paste into Google Sheets:")
+                st.code(f"{s_sn}, {s_name}, {s_rank}, {s_unit}, {s_contact}, {s_badge}")
+                st.link_button("Open Sheet", SHEET_EDIT_URL)
+
     with col_b:
         st.subheader("Log New Event")
         with st.form("event_form"):
-            st.text_input("Event Name")
-            st.text_input("Event Location")
-            st.multiselect("Select Staff", options=df_staff['Name'].tolist())
+            e_name = st.text_input("Event Name")
+            e_loc = st.text_input("Event Location")
+            e_date = st.date_input("Event Date", datetime.now()) # Added missing field
+            e_dur = st.number_input("Event Duration (Mins)", min_value=1, step=1) # Added missing field
+            e_staff = st.multiselect("Select Staff", options=df_staff['Name'].tolist())
             if st.form_submit_button("Submit Event"):
-                st.link_button("Paste into Google Sheets", SHEET_EDIT_URL)
+                st.info("Update the Events sheet with the following:")
+                st.code(f"{e_name} | {e_loc} | {e_date} | {e_dur} mins")
+                st.link_button("Open Sheet", SHEET_EDIT_URL)
 
-# --- TAB 3: STAFF SEARCH (LOCATION DEEP DIVE) ---
+# --- TAB 3: STAFF SEARCH (LOCATION DRILL-DOWN) ---
 with tab3:
     st.subheader("📍 Deployment Details by Location")
     f1, f2 = st.columns(2)
@@ -111,6 +118,7 @@ with tab3:
         sel_event = st.selectbox(f"Select Event at {sel_loc}", sorted(loc_data['Event Name'].unique()))
 
     event_attendance = loc_data[loc_data['Event Name'] == sel_event]
+    # INNER JOIN fixes 'None' values by looking up Rank, Unit, Contact from df_staff
     detailed_staff_list = pd.merge(
         event_attendance[['SN']], 
         df_staff[['SN', 'Rank', 'Name', 'Unit', 'Contact']], 
@@ -119,12 +127,11 @@ with tab3:
     st.write(f"#### Staff On-Site ({len(detailed_staff_list)} members)")
     st.dataframe(detailed_staff_list[['Rank', 'Name', 'Unit', 'Contact']], use_container_width=True, hide_index=True)
 
-# --- TAB 4: EVENT LOGS (FULL LIST) ---
+# --- TAB 4 & 5: RESTORED LOGS & LEADERBOARD ---
 with tab4:
     st.title("🗓️ Master Event Logs")
     st.dataframe(df_events, use_container_width=True, hide_index=True)
 
-# --- TAB 5: LEADERBOARD ---
 with tab5:
     st.title("🏆 Leaderboard")
     top_staff = df_events['SN'].value_counts().head(10).reset_index()
