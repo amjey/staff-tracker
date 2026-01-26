@@ -1,7 +1,16 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 
-# --- 1. GLOBAL CONFIG ---
+# --- 1. SECURE GOOGLE SHEETS CONNECTION ---
+def get_gspread_client():
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    # Accessing the JSON key stored in Streamlit Secrets
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+    return gspread.authorize(creds)
+
+# --- 2. GLOBAL CONFIG ---
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
 DETAILS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Details"
 EVENTS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Event%20Details"
@@ -12,15 +21,15 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 @st.cache_data(ttl=2)
 def load_data():
     try:
+        # Load CSV data for viewing
         df_staff = pd.read_csv(DETAILS_URL).rename(columns=lambda x: x.strip())
         df_events = pd.read_csv(EVENTS_URL).rename(columns=lambda x: x.strip())
         
-        # Aggressive SN Cleaning
+        # Aggressive SN & Contact Cleaning
         clean_val = lambda x: str(x).split('.')[0].strip()
         df_staff['SN'] = df_staff['SN'].apply(clean_val)
         df_events['SN'] = df_events['SN'].apply(clean_val)
         
-        # Clean Contact (removes the .0 seen in your screenshot)
         if 'Contact' in df_staff.columns:
             df_staff['Contact'] = df_staff['Contact'].astype(str).apply(lambda x: x.split('.')[0])
 
@@ -47,17 +56,16 @@ def load_data():
 
 df_staff, df_events, dur_col, loc_col, cat_col = load_data()
 
-# --- 2. THE ULTIMATE TAB-SHIFT FIX (Sidebar Navigation) ---
+# --- 3. SIDEBAR NAVIGATION ---
 with st.sidebar:
     st.title("Settings & Navigation")
-    # This prevents the app from resetting to "Dashboard" when searching
     page = st.radio("Go to:", ["📊 Dashboard", "👤 Staff Details", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
     st.write("---")
     if st.button("🔄 Refresh Data"):
         st.cache_data.clear()
         st.rerun()
 
-# --- 3. PAGE LOGIC ---
+# --- 4. PAGE LOGIC ---
 
 if page == "📊 Dashboard":
     st.title("📊 Strategic Overview")
@@ -89,7 +97,6 @@ elif page == "👤 Staff Details":
         if not p_match.empty:
             p = p_match.iloc[0]
             st.header(f"Profile: {p['Name']}")
-            # Personal Metrics
             hist = df_events[df_events['SN'] == search_sn.strip()]
             col_a, col_b = st.columns(2)
             col_a.metric("Events", len(hist))
@@ -126,8 +133,16 @@ elif page == "🏆 Leaderboard":
 
 elif page == "➕ Add Data":
     st.title("➕ Data Management")
-    st.write("Fill in the details below, then use the button to open Google Sheets and paste.")
+    st.info("Form data will be saved directly to Google Sheets.")
     
+    # Connect to Google Sheets via API
+    try:
+        gc = get_gspread_client()
+        sh = gc.open_by_key(SHEET_ID)
+    except Exception as e:
+        st.error("Could not connect to Google Sheets API. Check your Secrets configuration.")
+        st.stop()
+
     col_a, col_b = st.columns(2)
     
     with col_a:
@@ -139,9 +154,15 @@ elif page == "➕ Add Data":
             new_unit = st.text_input("Unit")
             new_contact = st.text_input("Contact Number")
             new_badge = st.selectbox("Leader Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
-            if st.form_submit_button("Generate Entry"):
-                st.code(f"{new_sn}, {new_rank}, {new_name}, {new_unit}, {new_contact}, {new_badge}")
-                st.success("Entry generated! Copy the line above and paste into 'Details' sheet.")
+            
+            if st.form_submit_button("Save to Google Sheet"):
+                if new_sn and new_name:
+                    ws = sh.worksheet("Details")
+                    ws.append_row([new_sn, new_rank, new_name, new_unit, new_contact, new_badge])
+                    st.success(f"Successfully added {new_name} to Details!")
+                    st.cache_data.clear() # Forces app to reload new data
+                else:
+                    st.error("SN and Name are required.")
 
     with col_b:
         st.subheader("🔥 Log New Event")
@@ -152,8 +173,15 @@ elif page == "➕ Add Data":
             ev_date = st.date_input("Event Date")
             ev_dur = st.number_input("Duration (Mins)", min_value=1)
             ev_group = st.selectbox("Master Group", ["New Year", "Eid Al Fitr", "Eid Al Adha", "National Day", "Other"])
-            if st.form_submit_button("Generate Log"):
-                st.code(f"{ev_sn}, {ev_name}, {ev_loc}, {ev_date}, {ev_dur}, {ev_group}")
-                st.success("Log generated! Copy the line above and paste into 'Event Details' sheet.")
-    
+            
+            if st.form_submit_button("Save Event Log"):
+                if ev_sn and ev_name:
+                    ws = sh.worksheet("Event Details")
+                    ws.append_row([ev_sn, ev_name, ev_loc, str(ev_date), ev_dur, ev_group])
+                    st.success(f"Logged event for SN: {ev_sn}!")
+                    st.cache_data.clear() # Forces app to reload new data
+                else:
+                    st.error("Staff SN and Event Name are required.")
 
+    st.write("---")
+    st.link_button("📂 Manual Edit Google Sheet", SHEET_EDIT_URL)
