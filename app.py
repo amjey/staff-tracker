@@ -9,20 +9,10 @@ SHEET_EDIT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
-# --- 2. TAB LOCKING LOGIC (Fixes Shifting) ---
+# --- 2. THE TAB-SHIFTING CURE ---
+# Using session_state + segmented_control/tabs object hybrid
 if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = "📊 Dashboard"
-
-# Custom CSS to make the radio buttons look like a menu
-st.markdown("""
-    <style>
-    div[data-testid="stHorizontalBlock"] { background-color: #0e1117; padding: 10px; border-radius: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# Navigation Menu
-tabs = ["📊 Dashboard", "👤 Staff Details", "➕ Add Data", "🗓️ Event Logs", "🏆 Leaderboard"]
-st.session_state.active_tab = st.segmented_control("Navigation", tabs, default=st.session_state.active_tab)
+    st.session_state.active_tab = 0
 
 @st.cache_data(ttl=2)
 def load_data():
@@ -43,47 +33,55 @@ def load_data():
 
 df_staff, df_events, dur_col, loc_col = load_data()
 
-# --- 3. TAB CONTENT LOGIC ---
+# Use standard tabs but wrap them to maintain state
+t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "👤 Staff Details", "➕ Add Data", "🗓️ Event Logs", "🏆 Leaderboard"])
 
-if st.session_state.active_tab == "📊 Dashboard":
-    st.title("📊 Dashboard")
-    # ... (Your existing metrics code)
+# --- TAB 1: DASHBOARD ---
+with t1:
+    st.title("📊 Strategic Overview")
+    # ... Dashboard Metrics ...
 
-elif st.session_state.active_tab == "👤 Staff Details":
-    st.title("👤 Staff Details")
-    search_sn = st.text_input("🔍 Search SN", key="staff_search")
-    # ... (Your existing profile code)
+# --- TAB 2: STAFF DETAILS ---
+with t2:
+    st.title("👤 Staff Profiles")
+    search_sn = st.text_input("🔍 Search SN", key="staff_search_unique")
+    # ... Staff Profile Logic ...
 
-elif st.session_state.active_tab == "➕ Add Data":
-    st.title("➕ Add Data")
+# --- TAB 3: ADD DATA ---
+with t3:
+    st.title("➕ Data Management")
     st.link_button("Edit Google Sheet", SHEET_EDIT_URL)
 
-elif st.session_state.active_tab == "🗓️ Event Logs":
+# --- TAB 4: EVENT LOGS ---
+with t4:
     st.title("🗓️ Event Logs")
-    search_loc = st.text_input("🔍 Search Location", key="loc_search")
-    # ... (Your existing location search code)
+    search_loc = st.text_input("🔍 Search Location", key="loc_search_unique")
+    # ... Event Log Logic ...
 
-elif st.session_state.active_tab == "🏆 Leaderboard":
+# --- TAB 5: LEADERBOARD (UPDATED WITH SN) ---
+with t5:
     st.title("🏆 Top 5 Performance Leaderboard")
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("🔥 Top 5 by Engagements")
-        # Count events per SN
+        # Top 5 by Count
         top_eng = df_events['SN'].value_counts().head(5).reset_index()
         top_eng.columns = ['SN', 'Events']
-        # Merge with staff info
+        # Merge to get Name and Rank
         res_eng = pd.merge(top_eng, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-        st.dataframe(res_eng[['Rank', 'Name', 'Events']], use_container_width=True, hide_index=True)
+        # Displaying SN first
+        st.dataframe(res_eng[['SN', 'Rank', 'Name', 'Events']], use_container_width=True, hide_index=True)
 
     with col2:
         st.subheader("⏳ Top 5 by Total Duration")
-        # Sum duration per SN
+        # Top 5 by Summed Duration
         top_dur = df_events.groupby('SN')[dur_col].sum().sort_values(ascending=False).head(5).reset_index()
         top_dur.columns = ['SN', 'Total Mins']
-        # Merge with staff info
+        # Merge to get Name and Rank
         res_dur = pd.merge(top_dur, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-        st.dataframe(res_dur[['Rank', 'Name', 'Total Mins']], use_container_width=True, hide_index=True)
+        # Displaying SN first
+        st.dataframe(res_dur[['SN', 'Rank', 'Name', 'Total Mins']], use_container_width=True, hide_index=True)
 
     st.balloons()
