@@ -11,105 +11,119 @@ st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 @st.cache_data(ttl=2)
 def load_data():
-    df_staff = pd.read_csv(DETAILS_URL).rename(columns=lambda x: x.strip())
-    df_events = pd.read_csv(EVENTS_URL).rename(columns=lambda x: x.strip())
-    
-    # Aggressive SN Cleaning
-    clean_val = lambda x: str(x).split('.')[0].strip()
-    df_staff['SN'] = df_staff['SN'].apply(clean_val)
-    df_events['SN'] = df_events['SN'].apply(clean_val)
-    
-    # Flexible Column Discovery (Prevents KeyErrors)
-    dur_col = next((c for c in df_events.columns if 'duration' in c.lower()), "Duration")
-    loc_col = next((c for c in df_events.columns if 'location' in c.lower()), "Event Location")
-    cat_col = next((c for c in df_events.columns if 'group' in c.lower() or 'category' in c.lower()), "Master Group")
-    date_col = next((c for c in df_events.columns if 'date' in c.lower()), "Date")
+    try:
+        df_staff = pd.read_csv(DETAILS_URL).rename(columns=lambda x: x.strip())
+        df_events = pd.read_csv(EVENTS_URL).rename(columns=lambda x: x.strip())
+        
+        # Aggressive SN Cleaning
+        clean_val = lambda x: str(x).split('.')[0].strip()
+        df_staff['SN'] = df_staff['SN'].apply(clean_val)
+        df_events['SN'] = df_events['SN'].apply(clean_val)
+        
+        # Clean Contact (removes the .0 seen in your screenshot)
+        if 'Contact' in df_staff.columns:
+            df_staff['Contact'] = df_staff['Contact'].astype(str).apply(lambda x: x.split('.')[0])
 
-    if dur_col in df_events.columns:
-        df_events[dur_col] = pd.to_numeric(df_events[dur_col], errors='coerce').fillna(0)
+        # Flexible Column Discovery
+        dur_col = next((c for c in df_events.columns if 'duration' in c.lower()), "Duration")
+        loc_col = next((c for c in df_events.columns if 'location' in c.lower()), "Location")
+        cat_col = next((c for c in df_events.columns if 'group' in c.lower() or 'category' in c.lower()), "Master Group")
 
-    # Category Mapping for metrics
-    def get_cat(b):
-        b = str(b).strip()
-        if b in ["Assist.Technician", "Driver"]: return "AT"
-        if b in ["Master in Fireworks", "Pro in Fireworks", "Team Leader"]: return "TL"
-        return "Other"
-    df_staff['Category_Group'] = df_staff['Leader Badge'].apply(get_cat)
+        if dur_col in df_events.columns:
+            df_events[dur_col] = pd.to_numeric(df_events[dur_col], errors='coerce').fillna(0)
 
-    return df_staff, df_events, dur_col, loc_col, cat_col, date_col
+        # Mapping for Dashboard
+        def get_cat(b):
+            b = str(b).strip()
+            if b in ["Assist.Technician", "Driver"]: return "AT"
+            if b in ["Master in Fireworks", "Pro in Fireworks", "Team Leader"]: return "TL"
+            return "Other"
+        df_staff['Category_Group'] = df_staff['Leader Badge'].apply(get_cat)
 
-df_staff, df_events, dur_col, loc_col, cat_col, date_col = load_data()
+        return df_staff, df_events, dur_col, loc_col, cat_col
+    except Exception as e:
+        st.error(f"Critical Data Load Error: {e}")
+        return pd.DataFrame(), pd.DataFrame(), "", "", ""
 
-# --- 2. THE UI ---
-# We use standard tabs but give all widgets 'keys' to stop the shifting
-t1, t2, t3, t4, t5 = st.tabs(["📊 Dashboard", "👤 Staff Details", "➕ Add Data", "🗓️ Event Logs", "🏆 Leaderboard"])
+df_staff, df_events, dur_col, loc_col, cat_col = load_data()
 
-# --- TAB 1: DASHBOARD (CHART RESTORED) ---
-with t1:
-    st.title("📊 Strategic Overview")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Registered", len(df_staff))
-    m2.metric("Team Leaders", len(df_staff[df_staff['Category_Group'] == "TL"]))
-    m3.metric("Assist. Technicians", len(df_staff[df_staff['Category_Group'] == "AT"]))
-    
+# --- 2. THE ULTIMATE TAB-SHIFT FIX (Sidebar Navigation) ---
+with st.sidebar:
+    st.title("Settings & Navigation")
+    # This prevents the app from resetting to "Dashboard" when searching
+    page = st.radio("Go to:", ["📊 Dashboard", "👤 Staff Details", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
     st.write("---")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Event Frequency Table")
-        if cat_col in df_events.columns:
-            summary = df_events.groupby(cat_col).size().reset_index(name='Total Events')
-            st.dataframe(summary, use_container_width=True, hide_index=True)
-    
-    with c2:
-        st.subheader("Visual Breakdown")
-        if cat_col in df_events.columns:
-            chart_data = df_events[cat_col].value_counts()
-            st.bar_chart(chart_data, color="#0072B2")
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
 
-# --- TAB 2: STAFF DETAILS ---
-with t2:
+# --- 3. PAGE LOGIC ---
+
+if page == "📊 Dashboard":
+    st.title("📊 Strategic Overview")
+    if not df_staff.empty:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Registered", len(df_staff))
+        m2.metric("Team Leaders", len(df_staff[df_staff['Category_Group'] == "TL"]))
+        m3.metric("Assist. Technicians", len(df_staff[df_staff['Category_Group'] == "AT"]))
+        
+        st.write("---")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("Event Frequency")
+            if cat_col in df_events.columns:
+                summary = df_events.groupby(cat_col).size().reset_index(name='Total Events')
+                st.dataframe(summary, use_container_width=True, hide_index=True)
+        with c2:
+            st.subheader("Event Breakdown Chart")
+            if cat_col in df_events.columns:
+                chart_data = df_events[cat_col].value_counts()
+                st.bar_chart(chart_data)
+
+elif page == "👤 Staff Details":
     st.title("👤 Staff Profiles")
-    # Unique Key prevents tab reset on search
-    search_sn = st.text_input("🔍 Search SN", key="anchor_sn_search")
+    search_sn = st.text_input("🔍 Enter SN to view Profile", key="perm_sn_search")
     
     if search_sn:
         p_match = df_staff[df_staff['SN'] == search_sn.strip()]
         if not p_match.empty:
             p = p_match.iloc[0]
             st.header(f"Profile: {p['Name']}")
+            # Personal Metrics
             hist = df_events[df_events['SN'] == search_sn.strip()]
-            st.metric("Total Duration", f"{int(hist[dur_col].sum())} Mins")
+            col_a, col_b = st.columns(2)
+            col_a.metric("Events", len(hist))
+            col_b.metric("Total Duration", f"{int(hist[dur_col].sum())} Mins")
             st.dataframe(hist, use_container_width=True, hide_index=True)
         else:
-            st.warning("SN not found.")
+            st.warning("No staff member found with that SN.")
+    else:
+        st.dataframe(df_staff[['SN', 'Rank', 'Name', 'Unit', 'Contact', 'Leader Badge']], hide_index=True)
 
-# --- TAB 4: EVENT LOGS ---
-with t4:
+elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
-    # Unique Key prevents tab reset on search
-    search_loc = st.text_input("🔍 Search Location", key="anchor_loc_search")
-    
+    search_loc = st.text_input("🔍 Search Location", key="perm_loc_search")
     filtered = df_events.copy()
     if search_loc:
         filtered = filtered[filtered[loc_col].str.contains(search_loc, case=False, na=False)]
-    
     st.dataframe(filtered, use_container_width=True, hide_index=True)
 
-# --- TAB 5: LEADERBOARD ---
-with t5:
-    st.title("🏆 Top 5 Performance")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("🔥 Top 5 Engagements")
+elif page == "🏆 Leaderboard":
+    st.title("🏆 Performance Leaderboard (Top 5)")
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.subheader("🔥 Top 5 by Events")
         t_eng = df_events['SN'].value_counts().head(5).reset_index()
         t_eng.columns = ['SN', 'Events']
         res_eng = pd.merge(t_eng, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-        st.dataframe(res_eng[['SN', 'Rank', 'Name', 'Events']], use_container_width=True, hide_index=True)
-
-    with col2:
-        st.subheader("⏳ Top 5 Duration")
+        st.dataframe(res_eng[['SN', 'Rank', 'Name', 'Events']], hide_index=True)
+    with col_r:
+        st.subheader("⏳ Top 5 by Duration")
         t_dur = df_events.groupby('SN')[dur_col].sum().sort_values(ascending=False).head(5).reset_index()
         t_dur.columns = ['SN', 'Total Mins']
         res_dur = pd.merge(t_dur, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-        st.dataframe(res_dur[['SN', 'Rank', 'Name', 'Total Mins']], use_container_width=True, hide_index=True)
+        st.dataframe(res_dur[['SN', 'Rank', 'Name', 'Total Mins']], hide_index=True)
+
+elif page == "➕ Add Data":
+    st.title("➕ Data Management")
+    st.link_button("Edit Google Sheet", SHEET_EDIT_URL)
