@@ -126,4 +126,34 @@ elif page == "🏆 Leaderboard":
 
 elif page == "➕ Add Data":
     st.title("➕ Data Management")
-    st.link_button("Edit Google Sheet", SHEET_EDIT_URL)
+    st.write("Fill in the details below, then use the button to open Google Sheets and paste.")
+    
+    col_a, col_b = st.columns(2)
+    
+    with col_a:
+        st.subheader("📋 Register New Staff")
+        with st.form("staff_form", clear_on_submit=True):
+            new_sn = st.text_input("SN")
+            new_name = st.text_input("Full Name")
+            new_rank = st.text_input("Rank")
+            new_unit = st.text_input("Unit")
+            new_contact = st.text_input("Contact Number")
+            new_badge = st.selectbox("Leader Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
+            if st.form_submit_button("Generate Entry"):
+                st.code(f"{new_sn}, {new_rank}, {new_name}, {new_unit}, {new_contact}, {new_badge}")
+                st.success("Entry generated! Copy the line above and paste into 'Details' sheet.")
+
+    with col_b:
+        st.subheader("🔥 Log New Event")
+        with st.form("event_form", clear_on_submit=True):
+            ev_sn = st.text_input("Staff SN")
+            ev_name = st.text_input("Event Name")
+            ev_loc = st.text_input("Event Location")
+            ev_date = st.date_input("Event Date")
+            ev_dur = st.number_input("Duration (Mins)", min_value=1)
+            ev_group = st.selectbox("Master Group", ["New Year", "Eid Al Fitr", "Eid Al Adha", "National Day", "Other"])
+            if st.form_submit_button("Generate Log"):
+                st.code(f"{ev_sn}, {ev_name}, {ev_loc}, {ev_date}, {ev_dur}, {ev_group}")
+                st.success("Log generated! Copy the line above and paste into 'Event Details' sheet.")
+    
+
