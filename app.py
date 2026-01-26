@@ -33,28 +33,17 @@ def load_data_via_api():
             if not data: return pd.DataFrame()
             headers = [h.strip() for h in data[0]]
             df = pd.DataFrame(data[1:], columns=headers)
-            # Remove ghost columns
-            df = df.loc[:, df.columns != '']
             return df
 
         df_staff = get_df("Details")
         df_events = get_df("Event Details")
 
-        if df_staff.empty or df_events.empty:
-            return df_staff, df_events
-
-        # Clean SN
-        clean_val = lambda x: str(x).split('.')[0].strip()
-        df_staff['SN'] = df_staff['SN'].apply(clean_val)
-        df_events['SN'] = df_events['SN'].apply(clean_val)
-        
-        # Clean Contact
-        if 'Contact' in df_staff.columns:
-            df_staff['Contact'] = df_staff['Contact'].astype(str).apply(lambda x: x.split('.')[0])
-
-        # Convert Duration to Numeric
-        if 'Duration' in df_events.columns:
-            df_events['Duration'] = pd.to_numeric(df_events['Duration'], errors='coerce').fillna(0)
+        # Clean SN/ID for matching
+        if not df_events.empty:
+            # We use 'Event ID' as the staff identifier based on your screenshot
+            df_events['Event ID'] = df_events['Event ID'].astype(str).apply(lambda x: x.split('.')[0].strip())
+        if not df_staff.empty:
+            df_staff['SN'] = df_staff['SN'].astype(str).apply(lambda x: x.split('.')[0].strip())
 
         return df_staff, df_events
     except Exception as e:
@@ -65,62 +54,22 @@ df_staff, df_events = load_data_via_api()
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
-    st.title("Main Menu")
-    page = st.radio("Go to:", ["📊 Dashboard", "👤 Staff Details", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
+    st.title("Staff & Events")
+    page = st.radio("Go to:", ["📊 Dashboard", "👤 Staff Profiles", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
     if st.button("🔄 Sync with Sheet"):
         st.cache_data.clear()
         st.rerun()
 
 # --- 5. PAGE LOGIC ---
 
-if page == "📊 Dashboard":
-    st.title("📊 Strategic Overview")
-    if not df_staff.empty:
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Staff", len(df_staff))
-        if 'Leader Badge' in df_staff.columns:
-            tl_count = len(df_staff[df_staff['Leader Badge'].str.contains("Team Leader|Master|Pro", na=False)])
-            at_count = len(df_staff[df_staff['Leader Badge'].str.contains("Assist|Driver", na=False)])
-            m2.metric("Leaders/Pros", tl_count)
-            m3.metric("Assistants/Drivers", at_count)
-        
-        st.divider()
-        if 'Master Group' in df_events.columns:
-            st.subheader("Event Distribution")
-            st.bar_chart(df_events['Master Group'].value_counts())
-
-elif page == "👤 Staff Details":
-    st.title("👤 Staff Profiles")
-    search_sn = st.text_input("🔍 Search by SN")
-    if search_sn:
-        res = df_staff[df_staff['SN'] == search_sn.strip()]
-        if not res.empty:
-            p = res.iloc[0]
-            st.header(f"Profile: {p['Name']}")
-            hist = df_events[df_events['SN'] == p['SN']]
-            c1, c2 = st.columns(2)
-            c1.metric("Total Events", len(hist))
-            if 'Duration' in hist.columns:
-                c2.metric("Total Mins", f"{int(hist['Duration'].sum())}")
-            st.dataframe(hist, use_container_width=True, hide_index=True)
-        else: st.warning("Staff SN not found.")
-    else:
-        st.dataframe(df_staff, use_container_width=True, hide_index=True)
-
-elif page == "🗓️ Event Logs":
+if page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
-    # Forces column order for display to prevent Date/Name confusion
-    cols_to_show = ["SN", "Event Name", "Location", "Date", "Duration", "Master Group"]
-    existing_cols = [c for c in cols_to_show if c in df_events.columns]
-    st.dataframe(df_events[existing_cols], use_container_width=True, hide_index=True)
-
-elif page == "🏆 Leaderboard":
-    st.title("🏆 Leaderboard")
     if not df_events.empty:
-        top_e = df_events['SN'].value_counts().head(5).reset_index()
-        top_e.columns = ['SN', 'Events']
-        merged = pd.merge(top_e, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-        st.table(merged[['Rank', 'Name', 'Events']])
+        # Match your screenshot columns exactly
+        display_cols = ["Event ID", "Event Location", "Event Name", "Event Date", "Event Duration (Mins)", "Master Group"]
+        st.dataframe(df_events[display_cols], use_container_width=True, hide_index=True)
+    else:
+        st.info("No events found.")
 
 elif page == "➕ Add Data":
     st.title("➕ Data Management")
@@ -144,17 +93,46 @@ elif page == "➕ Add Data":
                 st.rerun()
 
     with col_b:
-        st.subheader("🔥 New Event")
+        st.subheader("🔥 Log New Event")
         with st.form("event_f", clear_on_submit=True):
-            e_sn = st.text_input("Staff SN")
+            e_id = st.text_input("Staff SN (Event ID)")
+            e_lc = st.text_input("Event Location")
             e_nm = st.text_input("Event Name")
-            e_lc = st.text_input("Location")
-            e_dt = st.date_input("Date")
-            e_dr = st.number_input("Duration (Mins)", min_value=1)
-            e_gr = st.selectbox("Group", ["New Year", "Eid Celebrations", "National Day", "Other"])
+            e_dt = st.date_input("Event Date")
+            e_dr = st.text_input("Duration (e.g. 120 Mins)")
+            e_gr = st.selectbox("Master Group", ["New Year", "Eid", "National Day", "Other Events"])
+            
             if st.form_submit_button("Save Event"):
-                # Append strictly in this order: SN, Event Name, Location, Date, Duration, Master Group
-                sh.worksheet("Event Details").append_row([e_sn, e_nm, e_lc, str(e_dt), e_dr, e_gr])
+                # CRITICAL: This order matches your headers: 
+                # ID, Location, Name, Date, Duration, Group
+                new_row = [e_id, e_lc, e_nm, str(e_dt), e_dr, e_gr]
+                sh.worksheet("Event Details").append_row(new_row)
                 st.cache_data.clear()
-                st.success("Event logged!")
+                st.success("Event Aligned & Saved!")
                 st.rerun()
+
+elif page == "📊 Dashboard":
+    st.title("📊 Overview")
+    if not df_staff.empty:
+        st.metric("Total Registered Staff", len(df_staff))
+        st.divider()
+        if 'Master Group' in df_events.columns:
+            st.bar_chart(df_events['Master Group'].value_counts())
+
+elif page == "👤 Staff Profiles":
+    st.title("👤 Search Profiles")
+    sel_sn = st.text_input("Enter SN to view history")
+    if sel_sn:
+        staff_data = df_staff[df_staff['SN'] == sel_sn.strip()]
+        if not staff_data.empty:
+            st.header(staff_data.iloc[0]['Name'])
+            # Filter events where Event ID matches Staff SN
+            history = df_events[df_events['Event ID'] == sel_sn.strip()]
+            st.dataframe(history, use_container_width=True, hide_index=True)
+
+elif page == "🏆 Leaderboard":
+    st.title("🏆 Leaderboard")
+    if not df_events.empty:
+        counts = df_events['Event ID'].value_counts().head(5).reset_index()
+        counts.columns = ['SN', 'Events']
+        st.table(counts)
