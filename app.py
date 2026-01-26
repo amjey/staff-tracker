@@ -5,7 +5,7 @@ import json
 from google.oauth2.service_account import Credentials
 
 # --- 1. SECURE GOOGLE SHEETS CONNECTION ---
-@st.cache_resource # Use cache_resource for the connection object
+@st.cache_resource
 def get_gspread_client():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -18,25 +18,35 @@ def get_gspread_client():
 
 # --- 2. GLOBAL CONFIG ---
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
-
 st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
-# --- 3. DATA LOADING (API VERSION) ---
-@st.cache_data(ttl=5) # Cache expires every 5 seconds for near-instant updates
+# --- 3. DATA LOADING (FORGIVING VERSION) ---
+@st.cache_data(ttl=5)
 def load_data_via_api():
     try:
         gc = get_gspread_client()
         sh = gc.open_by_key(SHEET_ID)
         
-        # Read directly from worksheets
-        rows_staff = sh.worksheet("Details").get_all_records()
-        rows_events = sh.worksheet("Event Details").get_all_records()
-        
-        df_staff = pd.DataFrame(rows_staff)
-        df_events = pd.DataFrame(rows_events)
+        # Helper to convert sheet values to DataFrame safely
+        def get_df(worksheet_name):
+            data = sh.worksheet(worksheet_name).get_all_values()
+            if not data:
+                return pd.DataFrame()
+            # Use the first row as headers, and handle duplicates/empty headers
+            df = pd.DataFrame(data[1:], columns=data[0])
+            # Remove any columns that have empty names
+            df = df.loc[:, df.columns != '']
+            return df
+
+        df_staff = get_df("Details")
+        df_events = get_df("Event Details")
 
         if df_staff.empty or df_events.empty:
             return df_staff, df_events, "", "", ""
+
+        # Clean column names (strip spaces)
+        df_staff.columns = df_staff.columns.str.strip()
+        df_events.columns = df_events.columns.str.strip()
 
         # Data Cleaning
         clean_val = lambda x: str(x).split('.')[0].strip()
@@ -77,17 +87,16 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-# --- 5. PAGE LOGIC (ADD DATA) ---
+# --- 5. PAGE LOGIC ---
 if page == "➕ Add Data":
-    st.title("➕ Data Entry Control")
-    
+    st.title("➕ Data Management")
     gc = get_gspread_client()
     sh = gc.open_by_key(SHEET_ID)
 
     ca, cb = st.columns(2)
     with ca:
-        st.subheader("📋 Register New Staff")
-        with st.form("staff_form", clear_on_submit=True):
+        st.subheader("📋 New Staff")
+        with st.form("staff_f", clear_on_submit=True):
             f_sn = st.text_input("SN")
             f_rk = st.text_input("Rank")
             f_nm = st.text_input("Name")
@@ -97,12 +106,11 @@ if page == "➕ Add Data":
             if st.form_submit_button("Save Staff Member"):
                 sh.worksheet("Details").append_row([f_sn, f_rk, f_nm, f_un, f_ct, f_bd])
                 st.cache_data.clear()
-                st.success("Saved! Refreshing...")
                 st.rerun()
 
     with cb:
-        st.subheader("🔥 Log New Event")
-        with st.form("event_form", clear_on_submit=True):
+        st.subheader("🔥 New Event")
+        with st.form("event_f", clear_on_submit=True):
             e_sn = st.text_input("Staff SN")
             e_nm = st.text_input("Event Name")
             e_lc = st.text_input("Location")
@@ -112,14 +120,13 @@ if page == "➕ Add Data":
             if st.form_submit_button("Save Event Data"):
                 sh.worksheet("Event Details").append_row([e_sn, e_nm, e_lc, str(e_dt), e_dr, e_gr])
                 st.cache_data.clear()
-                st.success("Logged! Refreshing...")
                 st.rerun()
 
     st.divider()
     st.subheader("👀 Last 5 Entries (Live View)")
     st.dataframe(df_events.tail(5), use_container_width=True, hide_index=True)
 
-# --- 6. PAGE LOGIC (REST OF PAGES) ---
+# (Dashboard, Staff Details, Event Logs, Leaderboard logic remains same as previous version)
 elif page == "📊 Dashboard":
     st.title("📊 Strategic Overview")
     if not df_staff.empty:
@@ -130,8 +137,8 @@ elif page == "📊 Dashboard":
         st.bar_chart(df_events[cat_col].value_counts())
 
 elif page == "👤 Staff Details":
-    st.title("👤 Staff Profile Search")
-    search_sn = st.text_input("🔍 Enter Staff SN")
+    st.title("👤 Staff Profiles")
+    search_sn = st.text_input("🔍 Search SN")
     if search_sn:
         res = df_staff[df_staff['SN'] == search_sn.strip()]
         if not res.empty:
