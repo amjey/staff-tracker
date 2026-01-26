@@ -1,13 +1,14 @@
+import json # Add this at the top
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 
-# --- 1. SECURE GOOGLE SHEETS CONNECTION ---
 def get_gspread_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    # Accessing the JSON key stored in Streamlit Secrets
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+    # We now parse the string we created in Secrets back into a dictionary
+    creds_dict = json.loads(st.secrets["gcp_service_account"]["service_account_info"])
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     return gspread.authorize(creds)
 
 # --- 2. GLOBAL CONFIG ---
@@ -185,3 +186,4 @@ elif page == "➕ Add Data":
 
     st.write("---")
     st.link_button("📂 Manual Edit Google Sheet", SHEET_EDIT_URL)
+
