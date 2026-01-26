@@ -70,4 +70,75 @@ with t2:
     with f2:
         search_sn = st.text_input("🔍 Search SN for Profile", key="profile_search_anchor")
 
-    display_df = df_staff[df_staff['Leader Badge'].isin(
+    display_df = df_staff[df_staff['Leader Badge'].isin(role_filter)]
+    st.dataframe(display_df[['SN', 'Rank', 'Name', 'Unit', 'Contact', 'Leader Badge']], use_container_width=True, hide_index=True)
+
+    if search_sn:
+        clean_in = str(search_sn).strip()
+        match = df_staff[df_staff['SN'] == clean_in]
+        if not match.empty:
+            p = match.iloc[0]
+            st.markdown("---")
+            st.header(f"Profile: {p['Name']}")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Rank", p['Rank']); m2.metric("Unit", p['Unit'])
+            m3.metric("Contact", p['Contact']); m4.metric("Badge", p['Leader Badge'])
+            
+            p_history = df_events[df_events['SN'] == clean_in]
+            st.metric("Total Events", len(p_history))
+            st.metric("Total Duration", f"{int(p_history[dur_col].sum())} Mins")
+            st.dataframe(p_history, use_container_width=True, hide_index=True)
+
+# --- TAB 4: EVENT LOGS (LOCATION SEARCH) ---
+with t4:
+    st.title("🗓️ Event Logs & Location Search")
+    
+    # 1. Search Interface
+    search_col, filter_col = st.columns([2, 1])
+    
+    with search_col:
+        # Search by Location Name
+        search_loc = st.text_input("🔍 Search by Location (e.g. Soneva, Jumeirah)", key="loc_search_anchor")
+    
+    with filter_col:
+        # Dropdown for all locations found in the sheet
+        all_locs = sorted(df_events[loc_col].unique().tolist())
+        selected_loc = st.selectbox("Or Select from List", ["-- All Locations --"] + all_locs)
+
+    # 2. Filter Logic
+    filtered_df = df_events.copy()
+    if search_loc:
+        filtered_df = filtered_df[filtered_df[loc_col].str.contains(search_loc, case=False, na=False)]
+    elif selected_loc != "-- All Locations --":
+        filtered_df = filtered_df[filtered_df[loc_col] == selected_loc]
+
+    # 3. Display Details
+    st.write(f"### Found {len(filtered_df)} Event Entries")
+    
+    if not filtered_df.empty:
+        # Show Summary Stats for that Location
+        s1, s2 = st.columns(2)
+        total_loc_mins = filtered_df[dur_col].sum()
+        unique_events_count = len(filtered_df.drop_duplicates(subset=['Event Name', date_col] if date_col in filtered_df.columns else ['Event Name']))
+        
+        s1.metric("Events at this Location", unique_events_count)
+        s2.metric("Total Pyro Duration", f"{int(total_loc_mins)} Mins")
+
+        st.write("---")
+        # Full Detail Table
+        st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No events found for this location.")
+
+# --- TABS 3 & 5 (Form & Leaderboard) ---
+with t3:
+    st.title("➕ Add Data")
+    st.info("Check Google Sheets for live updates to SN, Rank, and Unit.")
+    st.link_button("Edit Google Sheet", SHEET_EDIT_URL)
+
+with t5:
+    st.title("🏆 Leaderboard")
+    top = df_events['SN'].value_counts().head(10).reset_index()
+    top.columns = ['SN', 'Engagements']
+    board = pd.merge(top, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+    st.dataframe(board[['Name', 'Rank', 'Engagements']], use_container_width=True, hide_index=True)
