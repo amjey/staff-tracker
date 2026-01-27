@@ -27,15 +27,12 @@ def load_data():
         gc = get_gspread_client()
         sh = gc.open_by_key(SHEET_ID)
         
-        # Load Staff Details
         staff_raw = sh.worksheet("Details").get_all_values()
         df_staff = pd.DataFrame(staff_raw[1:], columns=staff_raw[0]) if len(staff_raw) > 1 else pd.DataFrame()
         
-        # Load Event Logs
         event_raw = sh.worksheet("Event Details").get_all_values()
         df_events = pd.DataFrame(event_raw[1:], columns=event_raw[0]) if len(event_raw) > 1 else pd.DataFrame()
 
-        # Standardize IDs for searching/logic
         clean_fn = lambda x: str(x).split('.')[0].strip()
         if not df_staff.empty and 'SN' in df_staff.columns:
             df_staff['SN'] = df_staff['SN'].apply(clean_fn)
@@ -57,32 +54,36 @@ page = st.sidebar.radio("Navigation", ["📊 Dashboard", "👤 Staff Profiles", 
 if page == "📊 Dashboard":
     st.title("📊 Strategic Overview")
     if not df_staff.empty:
-        # Calculate Metrics
-        total_registered = len(df_staff)
-        
-        # Filter by Badge (matches your specific badge names)
-        # Note: 'Leader Badge' is the header from previous version, adjust if header in sheet differs
+        # Find the Badge Column
         badge_col = 'Leader Badge' if 'Leader Badge' in df_staff.columns else df_staff.columns[-1]
         
-        team_leaders = len(df_staff[df_staff[badge_col] == "Team Leader"])
-        assist_techs = len(df_staff[df_staff[badge_col] == "Assist.Technician"])
+        # 1. Total Registered
+        total_registered = len(df_staff)
         
-        # Layout Metrics
+        # 2. Team Leaders Group (TL + Pro + Master)
+        tl_group = ["Team Leader", "Pro in Fireworks", "Master in Fireworks"]
+        team_leaders_count = len(df_staff[df_staff[badge_col].isin(tl_group)])
+        
+        # 3. Assist.Technician Group (Assist + Driver)
+        at_group = ["Assist.Technician", "Driver"]
+        assist_techs_count = len(df_staff[df_staff[badge_col].isin(at_group)])
+        
+        # Metrics Display
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Registered Staff", total_registered)
-        m2.metric("Total Team Leaders", team_leaders)
-        m3.metric("Total Assist.Technician", assist_techs)
+        m2.metric("Total Team Leaders", team_leaders_count, help="Includes TL, Pro, and Master")
+        m3.metric("Total Assist.Technician", assist_techs_count, help="Includes Assistants and Drivers")
         
         st.divider()
         if not df_events.empty and 'Master Group' in df_events.columns:
             st.subheader("Events by Category")
             st.bar_chart(df_events['Master Group'].value_counts())
     else:
-        st.info("No data available to display metrics.")
+        st.info("No staff data found.")
 
 elif page == "👤 Staff Profiles":
     st.title("👤 Staff Activity Search")
-    search_id = st.text_input("🔍 Enter Staff SN (to see their history)")
+    search_id = st.text_input("🔍 Enter Staff SN")
     if search_id:
         person = df_staff[df_staff['SN'] == search_id.strip()]
         if not person.empty:
@@ -91,9 +92,9 @@ elif page == "👤 Staff Profiles":
             if not logs.empty:
                 st.dataframe(logs, use_container_width=True, hide_index=True)
             else:
-                st.warning("No events found for this specific Staff SN.")
+                st.warning("No events found for this SN.")
         else:
-            st.error("Staff SN not found in Details.")
+            st.error("Staff SN not found.")
 
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Master Event Logs")
@@ -109,9 +110,7 @@ elif page == "🏆 Leaderboard":
         leader_data.columns = ['SN', 'Total Events']
         if not df_staff.empty:
             merged = pd.merge(leader_data, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-            st.table(merged[['Rank', 'Name', 'Total Events']])
-        else:
-            st.table(leader_data)
+            st.table(merged[['Rank', 'Name', 'Total Events']].head(10))
 
 elif page == "➕ Add Data":
     st.title("➕ Data Management")
@@ -129,7 +128,6 @@ elif page == "➕ Add Data":
             s_ct = st.text_input("Contact")
             s_bd = st.selectbox("Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
             if st.form_submit_button("Save Staff"):
-                # Saving: SN, Rank, Name, Unit, Contact, Badge
                 sh.worksheet("Details").append_row([s_sn, s_rk, s_nm, s_un, s_ct, s_bd])
                 st.cache_data.clear()
                 st.success(f"Registered {s_nm}!")
@@ -146,7 +144,6 @@ elif page == "➕ Add Data":
             e_dr = st.text_input("Duration (Mins)")
             e_gr = st.selectbox("Master Group", ["New Year", "Eid", "National Day", "Other Events"])
             if st.form_submit_button("Save Event"):
-                # Matches your 7-column sheet: SN, Event ID, Location, Name, Date, Duration, Group
                 sh.worksheet("Event Details").append_row([e_sn_auto, e_id, e_lc, e_nm, str(e_dt), e_dr, e_gr])
                 st.cache_data.clear()
                 st.success("Event Logged!")
