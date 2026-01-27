@@ -133,7 +133,8 @@ elif page == "🏆 Leaderboard":
             ev_counts.columns = ['SN', 'Total Events']
             if not df_staff.empty:
                 lb_ev = pd.merge(ev_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-                st.table(lb_ev[['Rank', 'Name', 'Total Events']].head(5))
+                # CHANGE: Use st.dataframe with hide_index=True
+                st.dataframe(lb_ev[['Rank', 'Name', 'Total Events']].head(5), hide_index=True, use_container_width=True)
 
         # Top 5 by Total Duration
         with col_b:
@@ -143,7 +144,8 @@ elif page == "🏆 Leaderboard":
                 dur_counts.columns = ['SN', 'Total Minutes']
                 if not df_staff.empty:
                     lb_dur = pd.merge(dur_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-                    st.table(lb_dur[['Rank', 'Name', 'Total Minutes']].head(5))
+                    # CHANGE: Use st.dataframe with hide_index=True
+                    st.dataframe(lb_dur[['Rank', 'Name', 'Total Minutes']].head(5), hide_index=True, use_container_width=True)
             else:
                 st.info("Duration data not available.")
     else:
@@ -174,3 +176,4 @@ elif page == "➕ Add Data":
             if st.form_submit_button("Save Event"):
                 sh.worksheet("Event Details").append_row([e_sn_ref, e_sn_key, e_lc, e_nm, str(e_dt), e_dr, e_gr])
                 st.rerun()
+
