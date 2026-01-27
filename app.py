@@ -27,12 +27,15 @@ def load_data():
         gc = get_gspread_client()
         sh = gc.open_by_key(SHEET_ID)
         
+        # Load Staff Details
         staff_raw = sh.worksheet("Details").get_all_values()
         df_staff = pd.DataFrame(staff_raw[1:], columns=staff_raw[0]) if len(staff_raw) > 1 else pd.DataFrame()
         
+        # Load Event Logs
         event_raw = sh.worksheet("Event Details").get_all_values()
         df_events = pd.DataFrame(event_raw[1:], columns=event_raw[0]) if len(event_raw) > 1 else pd.DataFrame()
 
+        # Standardize IDs for searching/logic
         clean_fn = lambda x: str(x).split('.')[0].strip()
         if not df_staff.empty and 'SN' in df_staff.columns:
             df_staff['SN'] = df_staff['SN'].apply(clean_fn)
@@ -54,30 +57,25 @@ page = st.sidebar.radio("Navigation", ["📊 Dashboard", "👤 Staff Profiles", 
 if page == "📊 Dashboard":
     st.title("📊 Strategic Overview")
     if not df_staff.empty:
-        # Find the Badge Column
+        # Define Badge Column (Usually 'Leader Badge' or the last column)
         badge_col = 'Leader Badge' if 'Leader Badge' in df_staff.columns else df_staff.columns[-1]
         
-        # 1. Total Registered
+        # Calculate Grouped Metrics
         total_registered = len(df_staff)
-        
-        # 2. Team Leaders Group (TL + Pro + Master)
         tl_group = ["Team Leader", "Pro in Fireworks", "Master in Fireworks"]
-        team_leaders_count = len(df_staff[df_staff[badge_col].isin(tl_group)])
-        
-        # 3. Assist.Technician Group (Assist + Driver)
         at_group = ["Assist.Technician", "Driver"]
-        assist_techs_count = len(df_staff[df_staff[badge_col].isin(at_group)])
         
-        # Metrics Display
+        team_leaders = len(df_staff[df_staff[badge_col].isin(tl_group)])
+        assist_techs = len(df_staff[df_staff[badge_col].isin(at_group)])
+        
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Registered Staff", total_registered)
-        m2.metric("Total Team Leaders", team_leaders_count, help="Includes TL, Pro, and Master")
-        m3.metric("Total Assist.Technician", assist_techs_count, help="Includes Assistants and Drivers")
+        m2.metric("Total Team Leaders", team_leaders)
+        m3.metric("Total Assist.Technician", assist_techs)
         
         st.divider()
-        if not df_events.empty and 'Master Group' in df_events.columns:
-            st.subheader("Events by Category")
-            st.bar_chart(df_events['Master Group'].value_counts())
+        st.subheader("📋 Staff Directory")
+        st.dataframe(df_staff, use_container_width=True, hide_index=True)
     else:
         st.info("No staff data found.")
 
@@ -92,25 +90,33 @@ elif page == "👤 Staff Profiles":
             if not logs.empty:
                 st.dataframe(logs, use_container_width=True, hide_index=True)
             else:
-                st.warning("No events found for this SN.")
+                st.warning("No events found for this specific Staff SN.")
         else:
             st.error("Staff SN not found.")
 
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Master Event Logs")
     if not df_events.empty:
+        # Table View
         cols = ["SN", "Event ID", "Event Location", "Event Name", "Event Date", "Event Duration (Mins)", "Master Group"]
         available_cols = [c for c in cols if c in df_events.columns]
         st.dataframe(df_events[available_cols], use_container_width=True, hide_index=True)
+    else:
+        st.info("No logs found.")
 
 elif page == "🏆 Leaderboard":
-    st.title("🏆 Top Performers")
+    st.title("🏆 Leaderboard")
     if not df_events.empty:
-        leader_data = df_events['Event ID'].value_counts().reset_index()
-        leader_data.columns = ['SN', 'Total Events']
+        # Count events per Staff SN (Event ID)
+        counts = df_events['Event ID'].value_counts().reset_index()
+        counts.columns = ['SN', 'Total Events']
+        
+        # Bring in Names for the Table
         if not df_staff.empty:
-            merged = pd.merge(leader_data, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-            st.table(merged[['Rank', 'Name', 'Total Events']].head(10))
+            leaderboard = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+            st.table(leaderboard[['Rank', 'Name', 'Total Events']].head(10))
+        else:
+            st.table(counts.head(10))
 
 elif page == "➕ Add Data":
     st.title("➕ Data Management")
