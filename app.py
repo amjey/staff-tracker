@@ -31,10 +31,8 @@ def load_and_scrub_data():
             raw_data = sh.worksheet(sheet_name).get_all_values()
             if len(raw_data) <= 1: return pd.DataFrame()
             
-            # Get headers and handle duplicates immediately
-            headers = [h.strip() if h.strip() else f"Empty_{i}" for i, h in enumerate(raw_data[0])]
-            
-            # Rebuild headers to ensure NO duplicates
+            # Rebuild headers to ensure NO duplicates or empty strings
+            headers = [h.strip() if h.strip() else f"Col_{i}" for i, h in enumerate(raw_data[0])]
             final_headers = []
             counts = {}
             for h in headers:
@@ -46,20 +44,17 @@ def load_and_scrub_data():
                     final_headers.append(h)
             
             df = pd.DataFrame(raw_data[1:], columns=final_headers)
-            # Remove any entirely empty rows or columns
-            df = df.dropna(how='all').loc[:, (df != "").any(axis=0)]
-            return df
+            return df.dropna(how='all')
 
         df_s = clean_sheet("Details")
         df_e = clean_sheet("Event Details")
 
-        # Normalize the SN column for matching
-        if not df_s.empty: df_s['SN'] = df_s['SN'].astype(str).str.strip()
+        if not df_s.empty: 
+            df_s['SN'] = df_s['SN'].astype(str).str.strip()
         if not df_e.empty: 
-            # Ensure the SN column exists in Event Details
             if 'SN' in df_e.columns:
                 df_e['SN'] = df_e['SN'].astype(str).str.strip()
-            # Math for Duration
+            # Duration Calculation
             dur_col = 'Event Duration (Mins)'
             if dur_col in df_e.columns:
                 df_e['Dur_Math'] = pd.to_numeric(df_e[dur_col].astype(str).str.extract('(\d+)')[0], errors='coerce').fillna(0)
@@ -81,46 +76,41 @@ if page == "📊 Strategic Overview":
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Staff", len(df_staff))
         
-        # Flexibly find columns even if they were renamed by the cleaner
-        badge_col = next((c for c in df_staff.columns if "Badge" in c), df_staff.columns[min(5, len(df_staff.columns)-1)])
+        badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge")
         tl_list = ["Team Leader", "Pro in Fireworks", "Master in Fireworks"]
         
-        c2.metric("Team Leaders", len(df_staff[df_staff[badge_col].isin(tl_list)]))
-        c3.metric("Assistants", len(df_staff) - len(df_staff[df_staff[badge_col].isin(tl_list)]))
+        if badge_col in df_staff.columns:
+            tls = len(df_staff[df_staff[badge_col].isin(tl_list)])
+            c2.metric("Team Leaders", tls)
+            c3.metric("Assistants", len(df_staff) - tls)
         
         st.divider()
-        st.subheader("📋 Registered Staff Directory")
         st.dataframe(df_staff, use_container_width=True, hide_index=True)
 
 # --- 6. STAFF PROFILES ---
 elif page == "👤 Staff Profiles":
-    st.title("👤 Staff Registry & Search")
+    st.title("👤 Staff Registry")
     if not df_staff.empty:
-        search_sn = st.text_input("🔍 Enter Staff SN to view History").strip()
+        search_sn = st.text_input("🔍 Search by Staff SN").strip()
         if search_sn:
             person = df_staff[df_staff['SN'] == search_sn]
             if not person.empty:
                 st.success(f"History for: {person.iloc[0]['Name']}")
-                history = df_events[df_events['SN'] == search_sn] if 'SN' in df_events.columns else pd.DataFrame()
-                if not history.empty:
-                    st.dataframe(history, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No recorded events for this SN.")
-            else:
-                st.error("SN not found.")
+                history = df_events[df_events['SN'] == search_sn] if not df_events.empty else pd.DataFrame()
+                st.dataframe(history, use_container_width=True, hide_index=True)
 
 # --- 7. EVENT LOGS ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
     if not df_events.empty:
-        search_loc = st.text_input("🔍 Search by Location").strip()
-        filtered = df_events[df_events['Event Location'].str.contains(search_loc, case=False, na=False)] if search_loc and 'Event Location' in df_events.columns else df_events
+        search_loc = st.text_input("🔍 Filter by Location").strip()
+        filtered = df_events[df_events['Event Location'].str.contains(search_loc, case=False, na=False)] if search_loc else df_events
         st.dataframe(filtered, use_container_width=True, hide_index=True)
 
 # --- 8. LEADERBOARD ---
 elif page == "🏆 Leaderboard":
-    st.title("🏆 Leaderboard (Top 5)")
-    if not df_events.empty and 'SN' in df_events.columns:
+    st.title("🏆 Top 5 Leaderboard")
+    if not df_events.empty:
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("🔥 Most Events")
@@ -133,29 +123,38 @@ elif page == "🏆 Leaderboard":
                 m_counts = df_events.groupby('SN')['Dur_Math'].sum().reset_index().sort_values('Dur_Math', ascending=False).head(5)
                 st.dataframe(pd.merge(m_counts, df_staff[['SN', 'Name']], on='SN', how='left'), hide_index=True)
 
-# --- 9. REPORTS ---
+# --- 9. REPORTS (WITH ERROR HANDLING) ---
 elif page == "🖨️ Reports":
     st.title("🖨️ Report Generator")
-    c1, col2 = st.columns(2)
+    
+    def to_excel_download(df, filename):
+        try:
+            output = BytesIO()
+            # We use xlsxwriter as a fallback if openpyxl is being finicky
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='Sheet1')
+            return output.getvalue()
+        except Exception as e:
+            st.error(f"Export Error: {e}. Please ensure 'xlsxwriter' is in requirements.txt")
+            return None
+
+    c1, c2 = st.columns(2)
     with c1:
-        if st.button("Download Staff Excel"):
-            towrite = BytesIO()
-            df_staff.to_excel(towrite, index=False, engine='openpyxl')
-            st.download_button("📥 Save Staff.xlsx", data=towrite.getvalue(), file_name="Staff_Registry.xlsx")
-    with col2:
-        if not df_events.empty and 'Event Location' in df_events.columns:
+        if st.button("Prepare Staff Registry Excel"):
+            data = to_excel_download(df_staff, "Staff_Registry.xlsx")
+            if data:
+                st.download_button("📥 Download Excel", data, "Staff_Registry.xlsx")
+    
+    with c2:
+        if not df_events.empty:
             loc = st.selectbox("Location Report", df_events['Event Location'].unique())
-            if st.button(f"Download {loc} Report"):
-                report = df_events[df_events['Event Location'] == loc]
-                towrite = BytesIO()
-                report.to_excel(towrite, index=False, engine='openpyxl')
-                st.download_button("📥 Save Report.xlsx", data=towrite.getvalue(), file_name=f"{loc}_Report.xlsx")
+            if st.button(f"Prepare {loc} Report"):
+                report_df = df_events[df_events['Event Location'] == loc]
+                data = to_excel_download(report_df, f"{loc}_Report.xlsx")
+                if data:
+                    st.download_button("📥 Download Excel", data, f"{loc}_Report.xlsx")
 
 # --- 10. DATA MANAGEMENT ---
 elif page == "➕ Data Management":
     st.title("➕ Data Management")
-    t1, t2 = st.tabs(["Add", "Delete"])
-    with t1:
-        st.write("Use form to add new data.")
-    with t2:
-        st.write("Use dropdown to remove data.")
+    st.info("Directly edit your Google Sheet or use the 'Add Data' tab for new entries.")
