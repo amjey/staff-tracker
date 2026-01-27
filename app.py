@@ -45,6 +45,11 @@ def load_and_scrub_data():
             df_e.columns = [c.strip() for c in df_e.columns]
             if 'SN' in df_e.columns:
                 df_e['SN'] = df_e['SN'].astype(str).str.strip()
+            
+            # Clean Duration column for math (removes "mins" text if present)
+            if 'Event Duration (Mins)' in df_e.columns:
+                df_e['Duration_Num'] = pd.to_numeric(df_e['Event Duration (Mins)'].astype(str).str.extract('(\d+)')[0], errors='coerce').fillna(0)
+            
             df_e = df_e[df_e.iloc[:, 0] != ""].dropna(how='all')
         else:
             df_e = pd.DataFrame()
@@ -95,47 +100,54 @@ elif page == "👤 Staff Profiles":
             else:
                 st.error("SN not found.")
 
-# --- 7. EVENT LOGS (SEARCHABLE BY LOCATION) ---
+# --- 7. EVENT LOGS ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
-    
     if not df_events.empty:
-        # Search Bar
-        search_loc = st.text_input("🔍 Search by Event Location (e.g. Malé, Hulhumale)").strip()
-        
+        search_loc = st.text_input("🔍 Search by Event Location").strip()
         if search_loc:
-            # Filter events by location (case-insensitive)
-            filtered_events = df_events[df_events['Event Location'].str.contains(search_loc, case=False, na=False)]
-            
-            if not filtered_events.empty:
-                # Group by unique event details to show staff attended
-                for (loc, date, name, dur), group in filtered_events.groupby(['Event Location', 'Event Date', 'Event Name', 'Event Duration (Mins)']):
+            filtered = df_events[df_events['Event Location'].str.contains(search_loc, case=False, na=False)]
+            if not filtered.empty:
+                for (loc, date, name, dur), group in filtered.groupby(['Event Location', 'Event Date', 'Event Name', 'Event Duration (Mins)']):
                     with st.expander(f"📍 {loc} | 🗓️ {date} | 🔥 {name}", expanded=True):
                         st.write(f"**Duration:** {dur}")
-                        
-                        # Merge with staff to get names
                         if not df_staff.empty:
                             staff_details = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank', 'Contact']], on='SN', how='left')
                             st.table(staff_details)
-                        else:
-                            st.table(group[['SN']])
             else:
-                st.warning(f"No events found for location: {search_loc}")
+                st.warning(f"No events found for: {search_loc}")
         else:
-            # Show all logs if no search
             st.dataframe(df_events, use_container_width=True, hide_index=True)
-    else:
-        st.info("No logs found.")
 
-# --- 8. LEADERBOARD ---
+# --- 8. LEADERBOARD (TOP 5 ONLY) ---
 elif page == "🏆 Leaderboard":
-    st.title("🏆 Leaderboard")
+    st.title("🏆 Leaderboard - Top 5 Performers")
+    
     if not df_events.empty:
-        counts = df_events['SN'].value_counts().reset_index()
-        counts.columns = ['SN', 'Events']
-        if not df_staff.empty:
-            merged = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-            st.table(merged[['Rank', 'Name', 'Events']].head(15))
+        col_a, col_b = st.columns(2)
+        
+        # Top 5 by Most Events
+        with col_a:
+            st.subheader("🔥 Top 5: Most Events")
+            ev_counts = df_events['SN'].value_counts().reset_index()
+            ev_counts.columns = ['SN', 'Total Events']
+            if not df_staff.empty:
+                lb_ev = pd.merge(ev_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+                st.table(lb_ev[['Rank', 'Name', 'Total Events']].head(5))
+
+        # Top 5 by Total Duration
+        with col_b:
+            st.subheader("⏳ Top 5: Most Duration (Mins)")
+            if 'Duration_Num' in df_events.columns:
+                dur_counts = df_events.groupby('SN')['Duration_Num'].sum().reset_index().sort_values('Duration_Num', ascending=False)
+                dur_counts.columns = ['SN', 'Total Minutes']
+                if not df_staff.empty:
+                    lb_dur = pd.merge(dur_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+                    st.table(lb_dur[['Rank', 'Name', 'Total Minutes']].head(5))
+            else:
+                st.info("Duration data not available.")
+    else:
+        st.info("No event data available to generate leaderboard.")
 
 # --- 9. ADD DATA ---
 elif page == "➕ Add Data":
