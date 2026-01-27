@@ -46,9 +46,9 @@ def load_and_scrub_data():
             if 'SN' in df_e.columns:
                 df_e['SN'] = df_e['SN'].astype(str).str.strip()
             
-            # Clean Duration column for math (removes "mins" text if present)
+            # Numeric conversion for duration math
             if 'Event Duration (Mins)' in df_e.columns:
-                df_e['Duration_Num'] = pd.to_numeric(df_e['Event Duration (Mins)'].astype(str).str.extract('(\d+)')[0], errors='coerce').fillna(0)
+                df_e['Dur_Math'] = pd.to_numeric(df_e['Event Duration (Mins)'].astype(str).str.extract('(\d+)')[0], errors='coerce').fillna(0)
             
             df_e = df_e[df_e.iloc[:, 0] != ""].dropna(how='all')
         else:
@@ -100,7 +100,7 @@ elif page == "👤 Staff Profiles":
             else:
                 st.error("SN not found.")
 
-# --- 7. EVENT LOGS ---
+# --- 7. EVENT LOGS (SEARCHABLE BY LOCATION) ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
     if not df_events.empty:
@@ -112,47 +112,40 @@ elif page == "🗓️ Event Logs":
                     with st.expander(f"📍 {loc} | 🗓️ {date} | 🔥 {name}", expanded=True):
                         st.write(f"**Duration:** {dur}")
                         if not df_staff.empty:
-         # Inside the Event Logs search logic:
-            if not df_staff.empty:
-    staff_details = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank', 'Contact']], on='SN', how='left')
-    # CHANGE: Use hide_index=True here
-    st.dataframe(staff_details, hide_index=True, use_container_width=True)
+                            staff_details = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank', 'Contact']], on='SN', how='left')
+                            # FIXED: No index column shown here
+                            st.dataframe(staff_details, hide_index=True, use_container_width=True)
             else:
                 st.warning(f"No events found for: {search_loc}")
         else:
             st.dataframe(df_events, use_container_width=True, hide_index=True)
 
-# --- 8. LEADERBOARD (TOP 5 ONLY) ---
+# --- 8. LEADERBOARD (TOP 5 - CLEANED) ---
 elif page == "🏆 Leaderboard":
     st.title("🏆 Leaderboard - Top 5 Performers")
-    
     if not df_events.empty:
         col_a, col_b = st.columns(2)
         
-        # Top 5 by Most Events
         with col_a:
             st.subheader("🔥 Top 5: Most Events")
             ev_counts = df_events['SN'].value_counts().reset_index()
             ev_counts.columns = ['SN', 'Total Events']
             if not df_staff.empty:
                 lb_ev = pd.merge(ev_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-                # CHANGE: Use st.dataframe with hide_index=True
+                # FIXED: hide_index=True removes the "0" column
                 st.dataframe(lb_ev[['Rank', 'Name', 'Total Events']].head(5), hide_index=True, use_container_width=True)
 
-        # Top 5 by Total Duration
         with col_b:
             st.subheader("⏳ Top 5: Most Duration (Mins)")
-            if 'Duration_Num' in df_events.columns:
-                dur_counts = df_events.groupby('SN')['Duration_Num'].sum().reset_index().sort_values('Duration_Num', ascending=False)
+            if 'Dur_Math' in df_events.columns:
+                dur_counts = df_events.groupby('SN')['Dur_Math'].sum().reset_index().sort_values('Dur_Math', ascending=False)
                 dur_counts.columns = ['SN', 'Total Minutes']
                 if not df_staff.empty:
                     lb_dur = pd.merge(dur_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
-                    # CHANGE: Use st.dataframe with hide_index=True
+                    # FIXED: hide_index=True removes the "0" column
                     st.dataframe(lb_dur[['Rank', 'Name', 'Total Minutes']].head(5), hide_index=True, use_container_width=True)
-            else:
-                st.info("Duration data not available.")
     else:
-        st.info("No event data available to generate leaderboard.")
+        st.info("No event data found.")
 
 # --- 9. ADD DATA ---
 elif page == "➕ Add Data":
@@ -179,6 +172,3 @@ elif page == "➕ Add Data":
             if st.form_submit_button("Save Event"):
                 sh.worksheet("Event Details").append_row([e_sn_ref, e_sn_key, e_lc, e_nm, str(e_dt), e_dr, e_gr])
                 st.rerun()
-
-
-
