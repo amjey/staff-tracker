@@ -20,21 +20,30 @@ def get_gspread_client():
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
 st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
-# --- 3. DATA LOADING (FORCED SYNC) ---
+# --- 3. DATA LOADING (WITH AUTO-CLEANING) ---
 def load_live_data():
     try:
         gc = get_gspread_client()
         sh = gc.open_by_key(SHEET_ID)
         
-        # Load Staff
+        # Load and Clean Staff Data
         staff_raw = sh.worksheet("Details").get_all_values()
-        df_s = pd.DataFrame(staff_raw[1:], columns=staff_raw[0]) if len(staff_raw) > 1 else pd.DataFrame()
+        if len(staff_raw) > 1:
+            df_s = pd.DataFrame(staff_raw[1:], columns=staff_raw[0])
+            # REMOVE COMPLETELY EMPTY ROWS (Prevents ValueError)
+            df_s = df_s.replace('', pd.NA).dropna(how='all').fillna('')
+        else:
+            df_s = pd.DataFrame()
         
-        # Load Events
+        # Load and Clean Event Data
         event_raw = sh.worksheet("Event Details").get_all_values()
-        df_e = pd.DataFrame(event_raw[1:], columns=event_raw[0]) if len(event_raw) > 1 else pd.DataFrame()
+        if len(event_raw) > 1:
+            df_e = pd.DataFrame(event_raw[1:], columns=event_raw[0])
+            df_e = df_e.replace('', pd.NA).dropna(how='all').fillna('')
+        else:
+            df_e = pd.DataFrame()
 
-        # Clean IDs
+        # Clean IDs for matching
         clean_fn = lambda x: str(x).split('.')[0].strip()
         if not df_s.empty and 'SN' in df_s.columns:
             df_s['SN'] = df_s['SN'].apply(clean_fn)
@@ -46,21 +55,26 @@ def load_live_data():
         st.error(f"Sync Error: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-# We pull data once per page load
 df_staff, df_events = load_live_data()
 
-# --- 4. NAVIGATION ---
-page = st.sidebar.radio("Navigation", ["📊 Dashboard", "👤 Staff Profiles", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
+# --- 4. NAVIGATION & FORCE REFRESH ---
+with st.sidebar:
+    st.title("Main Menu")
+    page = st.radio("Go to:", ["📊 Dashboard", "👤 Staff Profiles", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
+    if st.button("🔄 Force Data Refresh"):
+        st.cache_data.clear()
+        st.rerun()
 
-# --- 5. DASHBOARD (TABLE RESTORED) ---
+# --- 5. DASHBOARD ---
 if page == "📊 Dashboard":
     st.title("📊 Strategic Overview")
     if not df_staff.empty:
-        badge_col = 'Leader Badge' if 'Leader Badge' in df_staff.columns else df_staff.columns[-1]
-        
-        # Metrics Logic
+        # Metrics Grouping Logic
         tl_group = ["Team Leader", "Pro in Fireworks", "Master in Fireworks"]
         at_group = ["Assist.Technician", "Driver"]
+        
+        # Determine Badge column (usually last)
+        badge_col = df_staff.columns[-1]
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Registered Staff", len(df_staff))
@@ -68,9 +82,10 @@ if page == "📊 Dashboard":
         c3.metric("Total Assist.Technician", len(df_staff[df_staff[badge_col].isin(at_group)]))
         
         st.subheader("📋 Registered Staff Directory")
+        # Using a list to convert to clean table format
         st.dataframe(df_staff, use_container_width=True, hide_index=True)
     else:
-        st.warning("No staff found. Please add staff in the 'Add Data' tab.")
+        st.warning("No data found in 'Details' sheet.")
 
 # --- 6. PROFILES ---
 elif page == "👤 Staff Profiles":
@@ -81,7 +96,10 @@ elif page == "👤 Staff Profiles":
         if not person.empty:
             st.header(f"Staff: {person.iloc[0]['Name']}")
             logs = df_events[df_events['Event ID'] == search_id.strip()]
-            st.dataframe(logs, use_container_width=True, hide_index=True)
+            if not logs.empty:
+                st.dataframe(logs, use_container_width=True, hide_index=True)
+            else:
+                st.info("No activity logs for this user.")
         else:
             st.error("SN not found.")
 
@@ -89,23 +107,22 @@ elif page == "👤 Staff Profiles":
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Master Event Logs")
     if not df_events.empty:
+        # Match your 7-column spreadsheet
         cols = ["SN", "Event ID", "Event Location", "Event Name", "Event Date", "Event Duration (Mins)", "Master Group"]
         available = [c for c in cols if c in df_events.columns]
         st.dataframe(df_events[available], use_container_width=True, hide_index=True)
 
 # --- 8. LEADERBOARD ---
 elif page == "🏆 Leaderboard":
-    st.title("🏆 Leaderboard")
+    st.title("🏆 Top Performers")
     if not df_events.empty:
         counts = df_events['Event ID'].value_counts().reset_index()
         counts.columns = ['SN', 'Total Events']
         if not df_staff.empty:
             lb = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
             st.table(lb[['Rank', 'Name', 'Total Events']].head(10))
-        else:
-            st.table(counts.head(10))
 
-# --- 9. ADD DATA (FORMS LOCKED) ---
+# --- 9. ADD DATA (LOCKED FORMS) ---
 elif page == "➕ Add Data":
     st.title("➕ Data Management")
     gc = get_gspread_client()
@@ -114,7 +131,7 @@ elif page == "➕ Add Data":
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("📋 Register Staff")
-        with st.form("staff_reg", clear_on_submit=True):
+        with st.form("f1", clear_on_submit=True):
             s_sn = st.text_input("SN")
             s_rk = st.text_input("Rank")
             s_nm = st.text_input("Name")
@@ -123,12 +140,12 @@ elif page == "➕ Add Data":
             s_bd = st.selectbox("Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
             if st.form_submit_button("Save Staff"):
                 sh.worksheet("Details").append_row([s_sn, s_rk, s_nm, s_un, s_ct, s_bd])
-                st.success("Registered!")
+                st.success("Staff Saved!")
                 st.rerun()
 
     with col2:
         st.subheader("🔥 Log New Event")
-        with st.form("event_log", clear_on_submit=True):
+        with st.form("f2", clear_on_submit=True):
             e_sn = st.text_input("Sheet SN")
             e_id = st.text_input("Staff SN (Event ID)")
             e_lc = st.text_input("Event Location")
@@ -138,5 +155,5 @@ elif page == "➕ Add Data":
             e_gr = st.selectbox("Master Group", ["New Year", "Eid", "National Day", "Other Events"])
             if st.form_submit_button("Save Event"):
                 sh.worksheet("Event Details").append_row([e_sn, e_id, e_lc, e_nm, str(e_dt), e_dr, e_gr])
-                st.success("Logged!")
+                st.success("Event Logged!")
                 st.rerun()
