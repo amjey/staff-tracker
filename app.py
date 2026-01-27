@@ -4,7 +4,7 @@ import gspread
 import json
 from google.oauth2.service_account import Credentials
 
-# --- 1. SECURE CONNECTION ---
+# --- 1. CONNECTION ---
 @st.cache_resource
 def get_gspread_client():
     try:
@@ -20,40 +20,42 @@ def get_gspread_client():
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
 st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
-# --- 3. DATA CLEANING ENGINE ---
-def load_and_scrub_data():
+# --- 3. DATA SCRUBBING (FIXES THE "0" AND "VALUEERROR" ISSUES) ---
+def load_and_fix_data():
     try:
         gc = get_gspread_client()
         sh = gc.open_by_key(SHEET_ID)
         
-        # --- STAFF DATA ---
-        staff_sheet = sh.worksheet("Details").get_all_values()
-        df_s = pd.DataFrame(staff_sheet[1:], columns=staff_sheet[0]) if len(staff_sheet) > 1 else pd.DataFrame()
-        # Remove empty rows and fix column names
-        df_s = df_s.loc[:, ~df_s.columns.duplicated()].dropna(how='all')
-        df_s.columns = [c.strip() for c in df_s.columns]
-        
-        # --- EVENT DATA ---
-        event_sheet = sh.worksheet("Event Details").get_all_values()
-        df_e = pd.DataFrame(event_sheet[1:], columns=event_sheet[0]) if len(event_sheet) > 1 else pd.DataFrame()
-        df_e = df_e.loc[:, ~df_e.columns.duplicated()].dropna(how='all')
-        df_e.columns = [c.strip() for c in df_e.columns]
-
-        # Standardize SN/IDs
-        if not df_s.empty: df_s['SN'] = df_s['SN'].astype(str).str.strip()
-        if not df_e.empty: df_e['Event ID'] = df_e['Event ID'].astype(str).str.strip()
+        # Load Staff
+        staff_data = sh.worksheet("Details").get_all_values()
+        if len(staff_data) > 1:
+            df_s = pd.DataFrame(staff_data[1:], columns=staff_data[0])
+            # Clean headers and remove empty rows
+            df_s.columns = [c.strip() for c in df_s.columns]
+            df_s = df_s[df_s['SN'] != ""].dropna(how='all')
+        else:
+            df_s = pd.DataFrame()
+            
+        # Load Events
+        event_data = sh.worksheet("Event Details").get_all_values()
+        if len(event_data) > 1:
+            df_e = pd.DataFrame(event_data[1:], columns=event_data[0])
+            df_e.columns = [c.strip() for c in df_e.columns]
+            df_e = df_e[df_e['Event ID'] != ""].dropna(how='all')
+        else:
+            df_e = pd.DataFrame()
 
         return df_s, df_e
     except Exception as e:
         st.error(f"Sync Error: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-df_staff, df_events = load_and_scrub_data()
+df_staff, df_events = load_and_fix_data()
 
 # --- 4. NAVIGATION ---
 page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Profiles", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
 
-# --- 5. STRATEGIC OVERVIEW (DASHBOARD) ---
+# --- 5. STRATEGIC OVERVIEW (METRICS ONLY) ---
 if page == "📊 Strategic Overview":
     st.title("📊 Strategic Overview")
     
@@ -66,15 +68,14 @@ if page == "📊 Strategic Overview":
         tl_list = ["Team Leader", "Pro in Fireworks", "Master in Fireworks"]
         at_list = ["Assist.Technician", "Driver"]
         
-        total_s = len(df_staff)
-        total_tl = len(df_staff[df_staff[badge_col].isin(tl_list)])
-        total_at = len(df_staff[df_staff[badge_col].isin(at_list)])
+        count_tl = len(df_staff[df_staff[badge_col].isin(tl_list)])
+        count_at = len(df_staff[df_staff[badge_col].isin(at_list)])
         
-        # Display Metrics
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Registered Staff", total_s)
-        col2.metric("Total Team Leaders", total_tl)
-        col3.metric("Total Assist.Technician", total_at)
+        # Display Only the 3 Metrics
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Registered Staff", len(df_staff))
+        c2.metric("Total Team Leaders", count_tl)
+        c3.metric("Total Assist.Technician", count_at)
         
         st.divider()
         
@@ -82,41 +83,39 @@ if page == "📊 Strategic Overview":
         if not df_events.empty and 'Master Group' in df_events.columns:
             st.subheader("Events Distribution")
             st.bar_chart(df_events['Master Group'].value_counts())
-            
-        st.subheader("📋 Registered Staff Directory")
-        st.dataframe(df_staff, use_container_width=True, hide_index=True)
     else:
-        st.warning("No staff data found in Google Sheet.")
+        st.warning("No staff found. Please check your Google Sheet.")
 
-# --- 6. STAFF PROFILES (STAFF REGISTRY VIEW) ---
+# --- 6. STAFF PROFILES (TABLE MOVED HERE) ---
 elif page == "👤 Staff Profiles":
     st.title("👤 Staff Registry & Search")
     
-    # Show full registry table at the top as requested
     if not df_staff.empty:
-        st.subheader("All Staff Members")
+        # SHOW REGISTRY HERE
+        st.subheader("All Registered Staff")
         st.dataframe(df_staff, use_container_width=True, hide_index=True)
         
         st.divider()
         
-        # Individual Search
+        # SEARCH ACTIVITY
         search_id = st.text_input("🔍 Search Activity by Staff SN")
         if search_id:
             person = df_staff[df_staff['SN'] == search_id.strip()]
             if not person.empty:
                 st.success(f"History for: {person.iloc[0]['Name']}")
                 logs = df_events[df_events['Event ID'] == search_id.strip()]
-                st.dataframe(logs, use_container_width=True, hide_index=True)
+                if not logs.empty:
+                    st.dataframe(logs, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No events recorded for this SN.")
             else:
-                st.error("SN Not Found.")
+                st.error("Staff SN not found.")
 
-# --- 7. EVENT LOGS ---
+# --- 7. REMAINING TABS (UNCHANGED) ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
-    if not df_events.empty:
-        st.dataframe(df_events, use_container_width=True, hide_index=True)
+    st.dataframe(df_events, use_container_width=True, hide_index=True)
 
-# --- 8. LEADERBOARD ---
 elif page == "🏆 Leaderboard":
     st.title("🏆 Leaderboard")
     if not df_events.empty:
@@ -126,7 +125,6 @@ elif page == "🏆 Leaderboard":
             merged = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
             st.table(merged[['Rank', 'Name', 'Events']].head(15))
 
-# --- 9. ADD DATA ---
 elif page == "➕ Add Data":
     st.title("➕ Data Management")
     gc = get_gspread_client()
