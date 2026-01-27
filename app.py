@@ -61,7 +61,7 @@ def load_and_scrub_data():
 df_staff, df_events = load_and_scrub_data()
 
 # --- 4. NAVIGATION ---
-page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Profiles", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Add Data"])
+page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Profiles", "🗓️ Event Logs", "🏆 Leaderboard", "➕ Data Management"])
 
 # --- 5. STRATEGIC OVERVIEW ---
 if page == "📊 Strategic Overview":
@@ -139,62 +139,95 @@ elif page == "🏆 Leaderboard":
                     lb_dur = pd.merge(dur_counts, df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
                     st.dataframe(lb_dur[['Rank', 'Name', 'Total Minutes']].head(5), hide_index=True, use_container_width=True)
 
-# --- 9. ADD & DELETE DATA ---
-elif page == "➕ Add Data":
-    st.title("➕ Data Management")
+# --- 9. DATA MANAGEMENT (ADD, EDIT, DELETE) ---
+elif page == "➕ Data Management":
+    st.title("⚙️ Data Management")
     gc = get_gspread_client()
     sh = gc.open_by_key(SHEET_ID)
     
-    tab1, tab2 = st.tabs(["📝 Add New Entry", "🗑️ Delete Existing"])
+    t1, t2, t3 = st.tabs(["➕ Add New", "✏️ Edit Existing", "🗑️ Delete"])
 
-    with tab1:
+    # --- TAB 1: ADD ---
+    with t1:
         c1, c2 = st.columns(2)
         with c1:
             st.subheader("📋 Register Staff")
-            with st.form("f1", clear_on_submit=True):
+            with st.form("add_staff", clear_on_submit=True):
                 s_sn, s_rk, s_nm = st.text_input("SN"), st.text_input("Rank"), st.text_input("Name")
                 s_un, s_ct = st.text_input("Unit"), st.text_input("Contact")
                 s_bd = st.selectbox("Badge", ["Team Leader", "Assist.Technician", "Driver", "Master in Fireworks", "Pro in Fireworks"])
                 if st.form_submit_button("Save Staff"):
                     sh.worksheet("Details").append_row([s_sn, s_rk, s_nm, s_un, s_ct, s_bd])
-                    st.success("Staff member added!")
+                    st.success("Staff added!")
                     st.rerun()
         with c2:
             st.subheader("🔥 Log Event")
-            with st.form("f2", clear_on_submit=True):
-                e_sn_ref, e_sn_key = st.text_input("Sheet Ref"), st.text_input("Staff SN")
+            with st.form("add_event", clear_on_submit=True):
+                e_ref, e_sn = st.text_input("Sheet Ref"), st.text_input("Staff SN")
                 e_lc, e_nm = st.text_input("Location"), st.text_input("Event Name")
                 e_dt, e_dr = st.date_input("Date"), st.text_input("Duration")
                 e_gr = st.selectbox("Group", ["New Year", "Eid", "National Day", "Other"])
                 if st.form_submit_button("Save Event"):
-                    sh.worksheet("Event Details").append_row([e_sn_ref, e_sn_key, e_lc, e_nm, str(e_dt), e_dr, e_gr])
+                    sh.worksheet("Event Details").append_row([e_ref, e_sn, e_lc, e_nm, str(e_dt), e_dr, e_gr])
                     st.success("Event logged!")
                     st.rerun()
 
-    with tab2:
-        st.subheader("⚠️ Danger Zone")
-        d1, d2 = st.columns(2)
+    # --- TAB 2: EDIT ---
+    with t2:
+        choice = st.radio("What would you like to edit?", ["Staff Member", "Event Log"], horizontal=True)
         
-        with d1:
-            st.write("### Delete Staff")
-            if not df_staff.empty:
-                staff_to_del = st.selectbox("Select Staff to Remove", options=df_staff['SN'] + " - " + df_staff['Name'])
-                if st.button("Delete Staff Member"):
-                    target_sn = staff_to_del.split(" - ")[0]
-                    # Find the row index (gspread is 1-indexed, headers are row 1)
+        if choice == "Staff Member" and not df_staff.empty:
+            target = st.selectbox("Select Staff to Edit", options=df_staff['SN'] + " - " + df_staff['Name'])
+            target_sn = target.split(" - ")[0]
+            row_data = df_staff[df_staff['SN'] == target_sn].iloc[0]
+            
+            with st.form("edit_staff_form"):
+                new_rk = st.text_input("Rank", value=row_data['Rank'])
+                new_nm = st.text_input("Name", value=row_data['Name'])
+                new_un = st.text_input("Unit", value=row_data['Unit'])
+                new_ct = st.text_input("Contact", value=row_data['Contact'])
+                new_bd = st.text_input("Leader Badge", value=row_data['Leader Badge'] if 'Leader Badge' in df_staff.columns else "")
+                
+                if st.form_submit_button("Update Staff Details"):
                     idx = df_staff[df_staff['SN'] == target_sn].index[0] + 2
-                    sh.worksheet("Details").delete_rows(int(idx))
-                    st.warning(f"Deleted {staff_to_del}")
+                    sh.worksheet("Details").update(f"A{idx}:F{idx}", [[target_sn, new_rk, new_nm, new_un, new_ct, new_bd]])
+                    st.success("Updated successfully!")
                     st.rerun()
 
+        elif choice == "Event Log" and not df_events.empty:
+            target = st.selectbox("Select Event to Edit", options=df_events.index.astype(str) + " | " + df_events['Event Location'] + " (" + df_events['Event Name'] + ")")
+            row_idx = int(target.split(" | ")[0])
+            row_data = df_events.loc[row_idx]
+            
+            with st.form("edit_event_form"):
+                n_lc = st.text_input("Location", value=row_data['Event Location'])
+                n_nm = st.text_input("Event Name", value=row_data['Event Name'])
+                n_dt = st.text_input("Date (YYYY-MM-DD)", value=row_data['Event Date'])
+                n_dr = st.text_input("Duration", value=row_data['Event Duration (Mins)'])
+                n_gr = st.text_input("Group", value=row_data['Master Group'] if 'Master Group' in df_events.columns else "")
+                
+                if st.form_submit_button("Update Event Log"):
+                    g_idx = row_idx + 2
+                    sh.worksheet("Event Details").update(f"C{g_idx}:G{g_idx}", [[n_lc, n_nm, n_dt, n_dr, n_gr]])
+                    st.success("Event updated!")
+                    st.rerun()
+
+    # --- TAB 3: DELETE ---
+    with t3:
+        st.subheader("🗑️ Delete Data")
+        d1, d2 = st.columns(2)
+        with d1:
+            if not df_staff.empty:
+                s_del = st.selectbox("Delete Staff", options=df_staff['SN'] + " - " + df_staff['Name'], key="ds")
+                if st.button("Confirm Delete Staff"):
+                    sn = s_del.split(" - ")[0]
+                    idx = df_staff[df_staff['SN'] == sn].index[0] + 2
+                    sh.worksheet("Details").delete_rows(int(idx))
+                    st.rerun()
         with d2:
-            st.write("### Delete Event")
             if not df_events.empty:
-                event_to_del = st.selectbox("Select Event Log to Remove", options=df_events['SN'] + " | " + df_events['Event Location'] + " (" + df_events['Event Name'] + ")")
-                if st.button("Delete Event Entry"):
-                    # Find the row based on the unique combination of data
-                    target_ref = event_to_del.split(" | ")[0]
-                    idx = df_events[df_events['SN'] == target_ref].index[0] + 2
+                e_del = st.selectbox("Delete Event", options=df_events.index.astype(str) + " | " + df_events['Event Location'], key="de")
+                if st.button("Confirm Delete Event"):
+                    idx = int(e_del.split(" | ")[0]) + 2
                     sh.worksheet("Event Details").delete_rows(int(idx))
-                    st.warning("Deleted Event Entry")
                     st.rerun()
