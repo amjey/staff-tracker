@@ -112,8 +112,8 @@ elif page == "🗓️ Event Logs":
                     with st.expander(f"📍 {loc} | 🗓️ {date} | 🔥 {name}", expanded=True):
                         st.write(f"**Duration:** {dur}")
                         if not df_staff.empty:
-                            # Inside the Event Logs search logic:
-if not df_staff.empty:
+         # Inside the Event Logs search logic:
+            if not df_staff.empty:
     staff_details = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank', 'Contact']], on='SN', how='left')
     # CHANGE: Use hide_index=True here
     st.dataframe(staff_details, hide_index=True, use_container_width=True)
@@ -179,5 +179,6 @@ elif page == "➕ Add Data":
             if st.form_submit_button("Save Event"):
                 sh.worksheet("Event Details").append_row([e_sn_ref, e_sn_key, e_lc, e_nm, str(e_dt), e_dr, e_gr])
                 st.rerun()
+
 
 
