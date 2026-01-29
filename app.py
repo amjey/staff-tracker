@@ -107,33 +107,35 @@ elif page == "👤 Staff Search & History":
         if not staff_events.empty:
             st.dataframe(staff_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
 
-# --- 7. EVENT LOGS (SEARCH UPDATED) ---
+# --- 7. EVENT LOGS (FULL TABLE + SEARCH) ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
     if not df_events.empty:
-        search_term = st.text_input("🔍 Search by Location or Event Name", "").strip()
+        # 1. Search Interface
+        st.subheader("🔍 Detailed Search")
+        search_term = st.text_input("Enter Location or Event Name to see Staff Attendees", "").strip()
         
         if search_term:
-            # Filter logic for both Location and Name
             filtered_df = df_events[
                 df_events['Event Location'].str.contains(search_term, case=False, na=False) |
                 df_events['Event Name'].str.contains(search_term, case=False, na=False)
             ]
             
             if not filtered_df.empty:
-                st.write(f"### Results for '{search_term}'")
-                # Group by specific event markers to show staff lists
+                st.write(f"Showing staff breakdowns for: **{search_term}**")
                 for (loc, name, date), group in filtered_df.groupby(['Event Location', 'Event Name', 'Event Date']):
                     with st.expander(f"📍 {loc} | 🏷️ {name} | 📅 {date}"):
                         st.write(f"**Duration:** {group.iloc[0].get('Event Duration (Mins)', 'N/A')} mins")
-                        # Join with staff details to show names/ranks of attendees
                         attendees = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
                         st.dataframe(attendees[['SN', 'Rank', 'Name']], use_container_width=True, hide_index=True)
             else:
-                st.warning(f"No events found matching '{search_term}'.")
-        else:
-            st.info("Enter a location or event name above to see detailed staff attendance.")
-            st.dataframe(df_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
+                st.warning(f"No match found for '{search_term}'.")
+        
+        st.divider()
+        
+        # 2. Always show the Full Overview Table
+        st.subheader("📋 All Event History")
+        st.dataframe(df_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
     else:
         st.info("No events recorded yet.")
 
