@@ -69,7 +69,7 @@ badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") 
 # --- 4. NAVIGATION ---
 page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "🖨️ Report Center", "⚙️ Data Management"])
 
-# --- 5. STRATEGIC OVERVIEW (NO CHANGES) ---
+# --- 5. STRATEGIC OVERVIEW (UNCHANGED) ---
 if page == "📊 Strategic Overview":
     st.title("📊 Strategic Overview")
     if not df_staff.empty:
@@ -85,7 +85,7 @@ if page == "📊 Strategic Overview":
         if not df_events.empty and group_col:
             st.bar_chart(df_events[group_col].value_counts())
 
-# --- 6. STAFF SEARCH & HISTORY (NO CHANGES) ---
+# --- 6. STAFF SEARCH & HISTORY (UNCHANGED) ---
 elif page == "👤 Staff Search & History":
     st.title("👤 Staff Search & History")
     if not df_staff.empty:
@@ -107,15 +107,37 @@ elif page == "👤 Staff Search & History":
         if not staff_events.empty:
             st.dataframe(staff_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
 
-# --- 7. EVENT LOGS ---
+# --- 7. EVENT LOGS (SEARCH UPDATED) ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
     if not df_events.empty:
-        st.dataframe(df_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
+        search_term = st.text_input("🔍 Search by Location or Event Name", "").strip()
+        
+        if search_term:
+            # Filter logic for both Location and Name
+            filtered_df = df_events[
+                df_events['Event Location'].str.contains(search_term, case=False, na=False) |
+                df_events['Event Name'].str.contains(search_term, case=False, na=False)
+            ]
+            
+            if not filtered_df.empty:
+                st.write(f"### Results for '{search_term}'")
+                # Group by specific event markers to show staff lists
+                for (loc, name, date), group in filtered_df.groupby(['Event Location', 'Event Name', 'Event Date']):
+                    with st.expander(f"📍 {loc} | 🏷️ {name} | 📅 {date}"):
+                        st.write(f"**Duration:** {group.iloc[0].get('Event Duration (Mins)', 'N/A')} mins")
+                        # Join with staff details to show names/ranks of attendees
+                        attendees = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
+                        st.dataframe(attendees[['SN', 'Rank', 'Name']], use_container_width=True, hide_index=True)
+            else:
+                st.warning(f"No events found matching '{search_term}'.")
+        else:
+            st.info("Enter a location or event name above to see detailed staff attendance.")
+            st.dataframe(df_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
     else:
         st.info("No events recorded yet.")
 
-# --- 8. LEADERBOARD (FIXED) ---
+# --- 8. LEADERBOARD ---
 elif page == "🏆 Leaderboard":
     st.title("🏆 Leaderboard")
     if not df_events.empty and not df_staff.empty:
@@ -133,22 +155,18 @@ elif page == "🏆 Leaderboard":
                 dur_sum.columns = ['SN', 'Total Mins']
                 lb_dur = pd.merge(dur_sum, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
                 st.dataframe(lb_dur[['Rank', 'Name', 'Total Mins']], use_container_width=True, hide_index=True)
-    else:
-        st.warning("Data unavailable to generate leaderboard.")
 
-# --- 9. REPORT CENTER (UPDATED) ---
+# --- 9. REPORT CENTER ---
 elif page == "🖨️ Report Center":
     st.title("🖨️ Report Center")
     c1, c2, c3 = st.columns(3)
     with c1:
         st.info("### Staff Registry")
-        buf1 = BytesIO()
-        df_staff.to_excel(buf1, index=False)
+        buf1 = BytesIO(); df_staff.to_excel(buf1, index=False)
         st.download_button("📥 Download Staff Excel", buf1.getvalue(), "Full_Staff_List.xlsx")
     with c2:
         st.success("### Event Logs")
-        buf2 = BytesIO()
-        df_events.drop(columns=['Dur_Math'], errors='ignore').to_excel(buf2, index=False)
+        buf2 = BytesIO(); df_events.drop(columns=['Dur_Math'], errors='ignore').to_excel(buf2, index=False)
         st.download_button("📥 Download All Events Excel", buf2.getvalue(), "Event_History.xlsx")
     with c3:
         st.warning("### Individual Profile")
@@ -160,7 +178,7 @@ elif page == "🖨️ Report Center":
                 df_events[df_events['SN'] == p_sn].to_excel(writer, sheet_name='Event_History', index=False)
             st.download_button("📥 Download Profile", buf3.getvalue(), f"Profile_{p_sn}.xlsx")
 
-# --- 10. DATA MANAGEMENT (UPDATED) ---
+# --- 10. DATA MANAGEMENT ---
 elif page == "⚙️ Data Management":
     st.title("⚙️ Data Management")
     gc = get_gspread_client(); sh = gc.open_by_key(SHEET_ID)
