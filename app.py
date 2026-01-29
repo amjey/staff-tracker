@@ -19,6 +19,13 @@ def get_gspread_client():
 
 # --- 2. CONFIG ---
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
+st.set_page_config(page_title="Amjey Staff Intelligence", layout="wide", page_icon="🎯")
+
+# Update your titles in the navigation logic
+if page == "📊 Strategic Overview":
+    st.title("🎯 Amjey Staff Intelligence")
+    st.subheader("Operations Dashboard")# --- 2. CONFIG ---
+SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
 st.set_page_config(page_title="Staff Management Pro", layout="wide")
 
 # --- 3. DATA ENGINE ---
@@ -241,5 +248,6 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
 
 
