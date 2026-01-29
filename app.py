@@ -68,23 +68,27 @@ df_staff, df_events = load_and_scrub_data()
 badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") if not df_staff.empty else "Badge"
 
 # --- 4. ACCESS CONTROL & NAVIGATION ---
-st.sidebar.title("🔐 Access Control")
+st.sidebar.title("🔐 Amjey Intelligence Login")
 access_type = st.sidebar.radio("Mode", ["Guest/Viewer", "Admin"])
-admin_password = ""
+
+# 1. Initialize 'page' with a default value so the error disappears
+page = "📊 Strategic Overview" 
 
 if access_type == "Admin":
     admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
-
-# Define available pages based on access
-if access_type == "Admin" and admin_password == "10836":  # Change password here
-    st.sidebar.success("Admin Access Granted")
-    nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics", "🖨️ Report Center", "⚙️ Data Management"]
+    
+    # 2. Check password
+    if admin_password == "10836": # <--- CHANGE THIS TO YOUR PASSWORD
+        st.sidebar.success("Admin Access Granted")
+        nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics", "🖨️ Report Center", "⚙️ Data Management"]
+    else:
+        st.sidebar.warning("Please enter password for Admin tools")
+        nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
 else:
-    # Hide Data Management and Reports for Guest/Viewer
+    # Guest options
     nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
-    if access_type == "Admin" and admin_password != "":
-        st.sidebar.error("Incorrect Password")
 
+# 3. Define 'page' from the final allowed list
 page = st.sidebar.radio("Navigation", nav_options)
 
 # --- 5. STRATEGIC OVERVIEW (UPDATED CALCULATION) ---
@@ -248,6 +252,7 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
 
 
 
