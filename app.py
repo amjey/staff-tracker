@@ -48,7 +48,7 @@ def load_and_scrub_data():
             if dur_col:
                 df_e['Dur_Math'] = pd.to_numeric(df_e[dur_col].astype(str).str.extract('(\d+)')[0], errors='coerce').fillna(0)
             
-            # UNIQUE EVENT IDENTIFICATION (Grouping Location + Name + Date)
+            # UNIQUE EVENT IDENTIFICATION
             df_e['Unique_Event_ID'] = df_e['Event Location'].astype(str) + df_e['Event Name'].astype(str) + df_e['Event Date'].astype(str)
             
         return df_s, df_e
@@ -62,19 +62,21 @@ badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") 
 # --- 4. ACCESS CONTROL & NAVIGATION ---
 st.sidebar.title("🔐 Amjey Intelligence")
 
-# Initialize Session State for Login
+# Initialize Session States
 if "admin_auth" not in st.session_state:
     st.session_state.admin_auth = False
+if "show_welcome" not in st.session_state:
+    st.session_state.show_welcome = False
 
 access_type = st.sidebar.radio("Access Level", ["Guest/Viewer", "Admin"])
 nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
 
 if access_type == "Admin":
     if not st.session_state.admin_auth:
-        # Password entry bar
         admin_pw = st.sidebar.text_input("Enter Admin Password", type="password")
         if admin_pw == "10836": # <--- CHANGE PASSWORD HERE
             st.session_state.admin_auth = True
+            st.session_state.show_welcome = True 
             st.rerun()
         elif admin_pw != "":
             st.sidebar.error("❌ Incorrect Password")
@@ -84,18 +86,36 @@ if access_type == "Admin":
         nav_options += ["🖨️ Report Center", "⚙️ Data Management"]
         if st.sidebar.button("Logout"):
             st.session_state.admin_auth = False
+            st.session_state.show_welcome = False
             st.rerun()
 else:
-    # Reset auth if user switches back to Guest
     st.session_state.admin_auth = False
+    st.session_state.show_welcome = False
 
 page = st.sidebar.radio("Navigation", nav_options)
 
-# --- 5. PAGE LOGIC ---
+# --- 5. WELCOME OVERLAY ---
+if st.session_state.show_welcome:
+    st.balloons()
+    st.toast("Access Granted", icon="🎯")
+    with st.expander("🚀 Amjey Staff Intelligence: Quick Start Guide", expanded=True):
+        st.write(f"### Welcome back, Admin")
+        st.write(f"Today's Date: **{pd.Timestamp.now().strftime('%A, %d %B %Y')}**")
+        st.info("""
+        **System Checklist:**
+        * **Event Statistics:** Review the new 'Unique Deployment' charts.
+        * **Report Center:** Export attendee lists for specific island locations.
+        * **Staff Search:** Check total field time for team leaders.
+        """)
+        if st.button("Close Welcome Screen"):
+            st.session_state.show_welcome = False
+            st.rerun()
+
+# --- 6. PAGE LOGIC ---
 
 if page == "📊 Strategic Overview":
     st.title("🎯 Amjey Staff Intelligence")
-    st.subheader("Operations Dashboard")
+    st.subheader("Strategic Overview Dashboard")
     
     if not df_staff.empty:
         c1, c2, c3 = st.columns(3)
@@ -109,7 +129,7 @@ if page == "📊 Strategic Overview":
         c3.metric("Total Team Leaders", tls)
         
         st.divider()
-        st.subheader("Event Distribution by Group (Unique Deployments)")
+        st.subheader("Event Distribution (Unique Deployments)")
         if not df_events.empty:
             unique_df = df_events.drop_duplicates(subset=['Unique_Event_ID'])
             group_col = next((c for c in df_events.columns if "Group" in c), None)
@@ -127,8 +147,7 @@ elif page == "👤 Staff Search & History":
         staff_events = df_events[df_events['SN'] == sel_sn] if not df_events.empty else pd.DataFrame()
         
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Name", person['Name'])
-        k2.metric("Rank", person['Rank'])
+        k1.metric("Name", person['Name']); k2.metric("Rank", person['Rank'])
         k3.metric("Events Attended", len(staff_events))
         k4.metric("Total Minutes", int(staff_events['Dur_Math'].sum()) if 'Dur_Math' in staff_events.columns else 0)
         
@@ -238,4 +257,3 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
-
