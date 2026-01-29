@@ -60,8 +60,25 @@ def load_and_scrub_data():
 df_staff, df_events = load_and_scrub_data()
 badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") if not df_staff.empty else "Badge"
 
-# --- 4. NAVIGATION ---
-page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics", "🖨️ Report Center", "⚙️ Data Management"])
+# --- 4. ACCESS CONTROL & NAVIGATION ---
+st.sidebar.title("🔐 Access Control")
+access_type = st.sidebar.radio("Mode", ["Guest/Viewer", "Admin"])
+admin_password = ""
+
+if access_type == "Admin":
+    admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
+
+# Define available pages based on access
+if access_type == "Admin" and admin_password == "YourSecret123":  # Change password here
+    st.sidebar.success("Admin Access Granted")
+    nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics", "🖨️ Report Center", "⚙️ Data Management"]
+else:
+    # Hide Data Management and Reports for Guest/Viewer
+    nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
+    if access_type == "Admin" and admin_password != "":
+        st.sidebar.error("Incorrect Password")
+
+page = st.sidebar.radio("Navigation", nav_options)
 
 # --- 5. STRATEGIC OVERVIEW (UPDATED CALCULATION) ---
 if page == "📊 Strategic Overview":
@@ -224,3 +241,4 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
