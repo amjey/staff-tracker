@@ -73,7 +73,7 @@ if access_type == "Admin":
     if not st.session_state.admin_auth:
         # Password entry bar
         admin_pw = st.sidebar.text_input("Enter Admin Password", type="password")
-        if admin_pw == "YourSecret123": # <--- CHANGE PASSWORD HERE
+        if admin_pw == "10836": # <--- CHANGE PASSWORD HERE
             st.session_state.admin_auth = True
             st.rerun()
         elif admin_pw != "":
@@ -238,3 +238,4 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
