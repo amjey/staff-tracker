@@ -68,32 +68,32 @@ df_staff, df_events = load_and_scrub_data()
 badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") if not df_staff.empty else "Badge"
 
 # --- 4. ACCESS CONTROL & NAVIGATION ---
-st.sidebar.title("🔐 Amjey Intelligence Login")
+st.sidebar.title("🔐 Amjey Staff Intelligence")
+
+# We define the menu options FIRST based on access
 access_type = st.sidebar.radio("Mode", ["Guest/Viewer", "Admin"])
 
-# 1. Initialize 'page' with a default value so the error disappears
-page = "📊 Strategic Overview" 
+# Start with basic pages everyone can see
+nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
 
 if access_type == "Admin":
     admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
-    
-    # 2. Check password
-    if admin_password == "10836": # <--- CHANGE THIS TO YOUR PASSWORD
+    # Change "YourSecret123" to your actual password!
+    if admin_password == "YourSecret123":
         st.sidebar.success("Admin Access Granted")
-        nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics", "🖨️ Report Center", "⚙️ Data Management"]
-    else:
-        st.sidebar.warning("Please enter password for Admin tools")
-        nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
-else:
-    # Guest options
-    nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
+        # Add the sensitive tabs to the list if password is correct
+        nav_options += ["🖨️ Report Center", "⚙️ Data Management"]
+    elif admin_password != "":
+        st.sidebar.error("Incorrect Password")
 
-# 3. Define 'page' from the final allowed list
+# NOW we define the 'page' variable using the final list
+# This ensures 'page' is NEVER undefined
 page = st.sidebar.radio("Navigation", nav_options)
 
-# --- 5. STRATEGIC OVERVIEW (UPDATED CALCULATION) ---
+# --- 5. PAGE LOGIC ---
 if page == "📊 Strategic Overview":
-    st.title("📊 Strategic Overview")
+    st.title("🎯 Amjey Staff Intelligence")
+    # ... rest of your code ...
     if not df_staff.empty:
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Registered Staff", len(df_staff))
@@ -252,6 +252,7 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
 
 
 
