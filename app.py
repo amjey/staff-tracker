@@ -48,8 +48,8 @@ def load_and_scrub_data():
             if dur_col:
                 df_e['Dur_Math'] = pd.to_numeric(df_e[dur_col].astype(str).str.extract('(\d+)')[0], errors='coerce').fillna(0)
             
-            # UNIQUE EVENT IDENTIFICATION
-            df_e['Unique_Event_ID'] = df_e['Event Location'] + df_e['Event Name'] + df_e['Event Date'].astype(str)
+            # UNIQUE EVENT IDENTIFICATION (Grouping Location + Name + Date)
+            df_e['Unique_Event_ID'] = df_e['Event Location'].astype(str) + df_e['Event Name'].astype(str) + df_e['Event Date'].astype(str)
             
         return df_s, df_e
     except Exception as e:
@@ -62,17 +62,32 @@ badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") 
 # --- 4. ACCESS CONTROL & NAVIGATION ---
 st.sidebar.title("🔐 Amjey Intelligence")
 
+# Initialize Session State for Login
+if "admin_auth" not in st.session_state:
+    st.session_state.admin_auth = False
+
 access_type = st.sidebar.radio("Access Level", ["Guest/Viewer", "Admin"])
 nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
 
 if access_type == "Admin":
-    # Replace 'YourSecret123' with your chosen password
-    admin_pw = st.sidebar.text_input("Admin Password", type="password")
-    if admin_pw == "10836":
-        st.sidebar.success("Logged in as Admin")
+    if not st.session_state.admin_auth:
+        # Password entry bar
+        admin_pw = st.sidebar.text_input("Enter Admin Password", type="password")
+        if admin_pw == "YourSecret123": # <--- CHANGE PASSWORD HERE
+            st.session_state.admin_auth = True
+            st.rerun()
+        elif admin_pw != "":
+            st.sidebar.error("❌ Incorrect Password")
+    
+    if st.session_state.admin_auth:
+        st.sidebar.success("✅ Admin Access Active")
         nav_options += ["🖨️ Report Center", "⚙️ Data Management"]
-    elif admin_pw != "":
-        st.sidebar.error("Incorrect Password")
+        if st.sidebar.button("Logout"):
+            st.session_state.admin_auth = False
+            st.rerun()
+else:
+    # Reset auth if user switches back to Guest
+    st.session_state.admin_auth = False
 
 page = st.sidebar.radio("Navigation", nav_options)
 
@@ -94,7 +109,7 @@ if page == "📊 Strategic Overview":
         c3.metric("Total Team Leaders", tls)
         
         st.divider()
-        st.subheader("Event Distribution (Unique Deployments)")
+        st.subheader("Event Distribution by Group (Unique Deployments)")
         if not df_events.empty:
             unique_df = df_events.drop_duplicates(subset=['Unique_Event_ID'])
             group_col = next((c for c in df_events.columns if "Group" in c), None)
@@ -131,7 +146,7 @@ elif page == "🗓️ Event Logs":
                     attendees = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
                     st.dataframe(attendees, use_container_width=True, hide_index=True)
         st.divider()
-        st.subheader("📋 Raw Data (All Entries)")
+        st.subheader("📋 Raw Data (Every Entry)")
         st.dataframe(df_events.drop(columns=['Dur_Math', 'Unique_Event_ID'], errors='ignore'), use_container_width=True, hide_index=True)
 
 elif page == "🏆 Leaderboard":
@@ -142,13 +157,13 @@ elif page == "🏆 Leaderboard":
             st.subheader("🎖️ Most Events Attended")
             counts = df_events['SN'].value_counts().reset_index()
             counts.columns = ['SN', 'Count']
-            merged = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN').head(5)
+            merged = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
             st.dataframe(merged[['Rank', 'Name', 'Count']], use_container_width=True, hide_index=True)
         with c2:
             st.subheader("⏳ Total Time on Field")
             durs = df_events.groupby('SN')['Dur_Math'].sum().sort_values(ascending=False).reset_index()
             durs.columns = ['SN', 'Mins']
-            merged_dur = pd.merge(durs, df_staff[['SN', 'Name', 'Rank']], on='SN').head(5)
+            merged_dur = pd.merge(durs, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
             st.dataframe(merged_dur[['Rank', 'Name', 'Mins']], use_container_width=True, hide_index=True)
 
 elif page == "📈 Event Statistics":
@@ -160,7 +175,7 @@ elif page == "📈 Event Statistics":
         st.bar_chart(loc_counts)
         c1, c2 = st.columns(2)
         with c1:
-            st.write("#### Top 5 Locations")
+            st.write("#### Top 5 Locations (Unique Visits)")
             st.table(loc_counts.head(5))
         with c2:
             st.write("#### Top 5 Event Types")
@@ -223,5 +238,3 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
-
-
