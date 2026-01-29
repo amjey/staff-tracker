@@ -21,13 +21,6 @@ def get_gspread_client():
 SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
 st.set_page_config(page_title="Amjey Staff Intelligence", layout="wide", page_icon="🎯")
 
-# Update your titles in the navigation logic
-if page == "📊 Strategic Overview":
-    st.title("🎯 Amjey Staff Intelligence")
-    st.subheader("Operations Dashboard")# --- 2. CONFIG ---
-SHEET_ID = "1eiIvDBKXrpY28R2LQGEj0xvF2JuOglfRQ6-RAFt4CFE" 
-st.set_page_config(page_title="Staff Management Pro", layout="wide")
-
 # --- 3. DATA ENGINE ---
 def load_and_scrub_data():
     try:
@@ -55,8 +48,7 @@ def load_and_scrub_data():
             if dur_col:
                 df_e['Dur_Math'] = pd.to_numeric(df_e[dur_col].astype(str).str.extract('(\d+)')[0], errors='coerce').fillna(0)
             
-            # UNIQUE EVENT IDENTIFICATION (The Fix)
-            # We treat rows with the same Location, Name, and Date as ONE single event
+            # UNIQUE EVENT IDENTIFICATION
             df_e['Unique_Event_ID'] = df_e['Event Location'] + df_e['Event Name'] + df_e['Event Date'].astype(str)
             
         return df_s, df_e
@@ -68,37 +60,32 @@ df_staff, df_events = load_and_scrub_data()
 badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") if not df_staff.empty else "Badge"
 
 # --- 4. ACCESS CONTROL & NAVIGATION ---
-st.sidebar.title("🔐 Amjey Staff Intelligence")
+st.sidebar.title("🔐 Amjey Intelligence")
 
-# We define the menu options FIRST based on access
-access_type = st.sidebar.radio("Mode", ["Guest/Viewer", "Admin"])
-
-# Start with basic pages everyone can see
+access_type = st.sidebar.radio("Access Level", ["Guest/Viewer", "Admin"])
 nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics"]
 
 if access_type == "Admin":
-    admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
-    # Change "YourSecret123" to your actual password!
-    if admin_password == "YourSecret123":
-        st.sidebar.success("Admin Access Granted")
-        # Add the sensitive tabs to the list if password is correct
+    # Replace 'YourSecret123' with your chosen password
+    admin_pw = st.sidebar.text_input("Admin Password", type="password")
+    if admin_pw == "YourSecret123":
+        st.sidebar.success("Logged in as Admin")
         nav_options += ["🖨️ Report Center", "⚙️ Data Management"]
-    elif admin_password != "":
+    elif admin_pw != "":
         st.sidebar.error("Incorrect Password")
 
-# NOW we define the 'page' variable using the final list
-# This ensures 'page' is NEVER undefined
 page = st.sidebar.radio("Navigation", nav_options)
 
 # --- 5. PAGE LOGIC ---
+
 if page == "📊 Strategic Overview":
     st.title("🎯 Amjey Staff Intelligence")
-    # ... rest of your code ...
+    st.subheader("Operations Dashboard")
+    
     if not df_staff.empty:
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Registered Staff", len(df_staff))
         
-        # Calculate Unique Events
         unique_count = df_events['Unique_Event_ID'].nunique() if not df_events.empty else 0
         c2.metric("Total Unique Events", unique_count)
         
@@ -107,15 +94,13 @@ if page == "📊 Strategic Overview":
         c3.metric("Total Team Leaders", tls)
         
         st.divider()
-        st.subheader("Event Distribution by Group (Unique Events)")
+        st.subheader("Event Distribution (Unique Deployments)")
         if not df_events.empty:
-            # Grouping by Unique Event ID to ensure we don't overcount group bars
             unique_df = df_events.drop_duplicates(subset=['Unique_Event_ID'])
             group_col = next((c for c in df_events.columns if "Group" in c), None)
             if group_col:
                 st.bar_chart(unique_df[group_col].value_counts())
 
-# --- 6. STAFF SEARCH (UNCHANGED) ---
 elif page == "👤 Staff Search & History":
     st.title("👤 Staff Search & History")
     if not df_staff.empty:
@@ -135,7 +120,6 @@ elif page == "👤 Staff Search & History":
         if not staff_events.empty:
             st.dataframe(staff_events.drop(columns=['Dur_Math', 'Unique_Event_ID'], errors='ignore'), use_container_width=True, hide_index=True)
 
-# --- 7. EVENT LOGS (UNCHANGED) ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
     if not df_events.empty:
@@ -150,7 +134,6 @@ elif page == "🗓️ Event Logs":
         st.subheader("📋 Raw Data (All Entries)")
         st.dataframe(df_events.drop(columns=['Dur_Math', 'Unique_Event_ID'], errors='ignore'), use_container_width=True, hide_index=True)
 
-# --- 8. LEADERBOARD ---
 elif page == "🏆 Leaderboard":
     st.title("🏆 Staff Leaderboard")
     if not df_events.empty and not df_staff.empty:
@@ -168,29 +151,22 @@ elif page == "🏆 Leaderboard":
             merged_dur = pd.merge(durs, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
             st.dataframe(merged_dur[['Rank', 'Name', 'Mins']], use_container_width=True, hide_index=True)
 
-# --- 9. EVENT STATISTICS (FIXED CALCULATION) ---
 elif page == "📈 Event Statistics":
     st.title("📈 Unique Event Analytics")
     if not df_events.empty:
-        # We only look at unique instances of events
         unique_events_df = df_events.drop_duplicates(subset=['Unique_Event_ID'])
-        
         st.write("### 📍 Unique Events by Location")
         loc_counts = unique_events_df['Event Location'].value_counts()
         st.bar_chart(loc_counts)
-        
         c1, c2 = st.columns(2)
         with c1:
-            st.write("#### Top 5 Unique Locations")
+            st.write("#### Top 5 Locations")
             st.table(loc_counts.head(5))
         with c2:
-            st.write("#### Top 5 Unique Event Names")
+            st.write("#### Top 5 Event Types")
             name_counts = unique_events_df['Event Name'].value_counts()
             st.table(name_counts.head(5))
-    else:
-        st.info("No data available.")
 
-# --- 10. REPORT CENTER (MULTI-SHEET & SPECIFIC LOCATION) ---
 elif page == "🖨️ Report Center":
     st.title("🖨️ Report Center")
     c1, c2 = st.columns(2)
@@ -202,7 +178,6 @@ elif page == "🖨️ Report Center":
         st.success("### 🗓️ All Logs")
         buf2 = BytesIO(); df_events.drop(columns=['Dur_Math', 'Unique_Event_ID'], errors='ignore').to_excel(buf2, index=False)
         st.download_button("📥 Download All Event Logs", buf2.getvalue(), "Full_Event_Logs.xlsx")
-    
     st.divider()
     c3, c4 = st.columns(2)
     with c3:
@@ -214,13 +189,11 @@ elif page == "🖨️ Report Center":
                 df_staff[df_staff['SN'] == p_sn].to_excel(writer, sheet_name='Profile', index=False)
                 df_events[df_events['SN'] == p_sn].drop(columns=['Dur_Math', 'Unique_Event_ID'], errors='ignore').to_excel(writer, sheet_name='Attendance_History', index=False)
             st.download_button(f"📥 Download Profile {p_sn}", buf3.getvalue(), f"Profile_{p_sn}.xlsx")
-            
     with c4:
         st.error("### 📍 Location Report")
         unique_list = df_events.drop_duplicates(subset=['Unique_Event_ID'])
         unique_list['Label'] = unique_list['Event Location'] + " | " + unique_list['Event Name'] + " (" + unique_list['Event Date'].astype(str) + ")"
         sel_label = st.selectbox("Select Specific Event", unique_list['Label'].unique())
-        
         if st.button("Generate Attendee List"):
             match_id = unique_list[unique_list['Label'] == sel_label]['Unique_Event_ID'].iloc[0]
             attendees = df_events[df_events['Unique_Event_ID'] == match_id]
@@ -228,10 +201,8 @@ elif page == "🖨️ Report Center":
             buf4 = BytesIO(); final_rep.to_excel(buf4, index=False)
             st.download_button("📥 Download Attendee Excel", buf4.getvalue(), "Event_Staff_List.xlsx")
 
-# --- 11. DATA MANAGEMENT ---
 elif page == "⚙️ Data Management":
     st.title("⚙️ Data Management")
-    st.info("Directly edit your Google Sheet or use the forms below.")
     gc = get_gspread_client(); sh = gc.open_by_key(SHEET_ID)
     t_add, t_del = st.tabs(["Add Entry", "Delete Record"])
     with t_add:
@@ -252,8 +223,3 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
-
-
-
-
-
