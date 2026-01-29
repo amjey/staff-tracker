@@ -69,7 +69,7 @@ if access_type == "Admin":
     admin_password = st.sidebar.text_input("Enter Admin Password", type="password")
 
 # Define available pages based on access
-if access_type == "Admin" and admin_password == "YourSecret123":  # Change password here
+if access_type == "Admin" and admin_password == "10836":  # Change password here
     st.sidebar.success("Admin Access Granted")
     nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics", "🖨️ Report Center", "⚙️ Data Management"]
 else:
@@ -241,4 +241,5 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
 
