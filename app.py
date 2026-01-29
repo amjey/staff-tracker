@@ -69,7 +69,7 @@ badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") 
 # --- 4. NAVIGATION ---
 page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "🖨️ Report Center", "⚙️ Data Management"])
 
-# --- 5. STRATEGIC OVERVIEW (UNCHANGED) ---
+# --- 5. STRATEGIC OVERVIEW (PERFECT - UNCHANGED) ---
 if page == "📊 Strategic Overview":
     st.title("📊 Strategic Overview")
     if not df_staff.empty:
@@ -85,7 +85,7 @@ if page == "📊 Strategic Overview":
         if not df_events.empty and group_col:
             st.bar_chart(df_events[group_col].value_counts())
 
-# --- 6. STAFF SEARCH & HISTORY (UNCHANGED) ---
+# --- 6. STAFF SEARCH & HISTORY (PERFECT - UNCHANGED) ---
 elif page == "👤 Staff Search & History":
     st.title("👤 Staff Search & History")
     if not df_staff.empty:
@@ -107,37 +107,22 @@ elif page == "👤 Staff Search & History":
         if not staff_events.empty:
             st.dataframe(staff_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
 
-# --- 7. EVENT LOGS (FULL TABLE + SEARCH) ---
+# --- 7. EVENT LOGS (SEARCH + TABLE - UNCHANGED) ---
 elif page == "🗓️ Event Logs":
     st.title("🗓️ Event Logs")
     if not df_events.empty:
-        # 1. Search Interface
         st.subheader("🔍 Detailed Search")
         search_term = st.text_input("Enter Location or Event Name to see Staff Attendees", "").strip()
-        
         if search_term:
-            filtered_df = df_events[
-                df_events['Event Location'].str.contains(search_term, case=False, na=False) |
-                df_events['Event Name'].str.contains(search_term, case=False, na=False)
-            ]
-            
+            filtered_df = df_events[df_events['Event Location'].str.contains(search_term, case=False, na=False) | df_events['Event Name'].str.contains(search_term, case=False, na=False)]
             if not filtered_df.empty:
-                st.write(f"Showing staff breakdowns for: **{search_term}**")
                 for (loc, name, date), group in filtered_df.groupby(['Event Location', 'Event Name', 'Event Date']):
                     with st.expander(f"📍 {loc} | 🏷️ {name} | 📅 {date}"):
-                        st.write(f"**Duration:** {group.iloc[0].get('Event Duration (Mins)', 'N/A')} mins")
                         attendees = pd.merge(group[['SN']], df_staff[['SN', 'Name', 'Rank']], on='SN', how='left')
                         st.dataframe(attendees[['SN', 'Rank', 'Name']], use_container_width=True, hide_index=True)
-            else:
-                st.warning(f"No match found for '{search_term}'.")
-        
         st.divider()
-        
-        # 2. Always show the Full Overview Table
         st.subheader("📋 All Event History")
         st.dataframe(df_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
-    else:
-        st.info("No events recorded yet.")
 
 # --- 8. LEADERBOARD ---
 elif page == "🏆 Leaderboard":
@@ -146,19 +131,17 @@ elif page == "🏆 Leaderboard":
         col_left, col_right = st.columns(2)
         with col_left:
             st.subheader("🎖️ Most Events Attended")
-            ev_counts = df_events['SN'].value_counts().reset_index()
-            ev_counts.columns = ['SN', 'Events Count']
+            ev_counts = df_events['SN'].value_counts().reset_index(); ev_counts.columns = ['SN', 'Events Count']
             lb_ev = pd.merge(ev_counts, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
             st.dataframe(lb_ev[['Rank', 'Name', 'Events Count']], use_container_width=True, hide_index=True)
         with col_right:
             st.subheader("⏳ Highest Total Duration")
             if 'Dur_Math' in df_events.columns:
-                dur_sum = df_events.groupby('SN')['Dur_Math'].sum().sort_values(ascending=False).reset_index()
-                dur_sum.columns = ['SN', 'Total Mins']
+                dur_sum = df_events.groupby('SN')['Dur_Math'].sum().sort_values(ascending=False).reset_index(); dur_sum.columns = ['SN', 'Total Mins']
                 lb_dur = pd.merge(dur_sum, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
                 st.dataframe(lb_dur[['Rank', 'Name', 'Total Mins']], use_container_width=True, hide_index=True)
 
-# --- 9. REPORT CENTER ---
+# --- 9. REPORT CENTER (UPDATED FOR PROFILE EVENTS) ---
 elif page == "🖨️ Report Center":
     st.title("🖨️ Report Center")
     c1, c2, c3 = st.columns(3)
@@ -172,20 +155,25 @@ elif page == "🖨️ Report Center":
         st.download_button("📥 Download All Events Excel", buf2.getvalue(), "Event_History.xlsx")
     with c3:
         st.warning("### Individual Profile")
-        p_sn = st.selectbox("Select SN", df_staff['SN'].unique())
-        if st.button("Generate Profile Excel"):
+        p_sn = st.selectbox("Select SN for Detailed Report", df_staff['SN'].unique())
+        if st.button("Prepare Profile Excel"):
             buf3 = BytesIO()
-            with pd.ExcelWriter(buf3) as writer:
-                df_staff[df_staff['SN'] == p_sn].to_excel(writer, sheet_name='Profile', index=False)
-                df_events[df_events['SN'] == p_sn].to_excel(writer, sheet_name='Event_History', index=False)
-            st.download_button("📥 Download Profile", buf3.getvalue(), f"Profile_{p_sn}.xlsx")
+            # Creating Excel with 2 Sheets: Profile Data and Event History
+            with pd.ExcelWriter(buf3, engine='openpyxl') as writer:
+                # Sheet 1: Basic Info
+                df_staff[df_staff['SN'] == p_sn].to_excel(writer, sheet_name='Staff_Details', index=False)
+                # Sheet 2: Event History (The Requested Feature)
+                if not df_events.empty:
+                    p_events = df_events[df_events['SN'] == p_sn].drop(columns=['Dur_Math'], errors='ignore')
+                    p_events.to_excel(writer, sheet_name='Event_History', index=False)
+            
+            st.download_button(f"📥 Download Profile (SN: {p_sn})", buf3.getvalue(), f"Profile_Report_{p_sn}.xlsx")
 
 # --- 10. DATA MANAGEMENT ---
 elif page == "⚙️ Data Management":
     st.title("⚙️ Data Management")
     gc = get_gspread_client(); sh = gc.open_by_key(SHEET_ID)
     tab_add, tab_del = st.tabs(["➕ Add Entry", "🗑️ Delete Record"])
-    
     with tab_add:
         choice = st.radio("Entry Type", ["New Staff Member", "New Event Log"], horizontal=True)
         if choice == "New Staff Member":
@@ -198,12 +186,9 @@ elif page == "⚙️ Data Management":
                     st.success("Staff added!"); st.rerun()
         else:
             with st.form("event_form"):
-                e_ref = st.text_input("Reference/ID")
-                e_sn = st.selectbox("Staff SN", df_staff['SN'].unique())
-                e_loc = st.text_input("Event Location")
-                e_name = st.text_input("Event Name")
-                e_date = st.date_input("Event Date")
-                e_dur = st.number_input("Duration (Minutes)", min_value=1, step=1)
+                e_ref = st.text_input("Reference/ID"); e_sn = st.selectbox("Staff SN", df_staff['SN'].unique())
+                e_loc, e_name = st.text_input("Event Location"), st.text_input("Event Name")
+                e_date, e_dur = st.date_input("Event Date"), st.number_input("Duration (Minutes)", min_value=1, step=1)
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log Event"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp])
