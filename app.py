@@ -67,7 +67,7 @@ df_staff, df_events = load_and_scrub_data()
 badge_col = next((c for c in df_staff.columns if "Badge" in c), "Leader Badge") if not df_staff.empty else "Badge"
 
 # --- 4. NAVIGATION ---
-page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "🖨️ Report Center", "⚙️ Data Management"])
+page = st.sidebar.radio("Navigation", ["📊 Strategic Overview", "👤 Staff Search & History", "🗓️ Event Logs", "🏆 Leaderboard", "📈 Event Statistics", "🖨️ Report Center", "⚙️ Data Management"])
 
 # --- 5. STRATEGIC OVERVIEW (UNCHANGED) ---
 if page == "📊 Strategic Overview":
@@ -99,10 +99,8 @@ elif page == "👤 Staff Search & History":
         total_ev = len(staff_events)
         total_mins = staff_events['Dur_Math'].sum() if 'Dur_Math' in staff_events.columns else 0
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("Name", person['Name'])
-        k2.metric("Rank", person['Rank'])
-        k3.metric("Total Events", total_ev)
-        k4.metric("Total Duration", f"{int(total_mins)} min")
+        k1.metric("Name", person['Name']); k2.metric("Rank", person['Rank'])
+        k3.metric("Total Events", total_ev); k4.metric("Total Duration", f"{int(total_mins)} min")
         st.write(f"**Unit:** {person.get('Unit', 'N/A')} | **Badge:** {person.get(badge_col, 'N/A')}")
         if not staff_events.empty:
             st.dataframe(staff_events.drop(columns=['Dur_Math'], errors='ignore'), use_container_width=True, hide_index=True)
@@ -141,11 +139,28 @@ elif page == "🏆 Leaderboard":
                 lb_dur = pd.merge(dur_sum, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
                 st.dataframe(lb_dur[['Rank', 'Name', 'Total Mins']], use_container_width=True, hide_index=True)
 
-# --- 9. REPORT CENTER (ADDED EVENT LOCATION REPORT) ---
+# --- 9. EVENT STATISTICS (NEW TAB) ---
+elif page == "📈 Event Statistics":
+    st.title("📈 Event Analytics & Location Insights")
+    if not df_events.empty:
+        st.write("### Location Hotspots")
+        loc_counts = df_events['Event Location'].value_counts()
+        st.bar_chart(loc_counts)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.write("#### Top 5 Most Frequent Locations")
+            st.table(loc_counts.head(5))
+        with c2:
+            st.write("#### Top Event Types")
+            type_counts = df_events['Event Name'].value_counts()
+            st.table(type_counts.head(5))
+    else:
+        st.info("Log more events to see geographical and type statistics.")
+
+# --- 10. REPORT CENTER ---
 elif page == "🖨️ Report Center":
     st.title("🖨️ Report Center")
-    
-    # Standard Exports
     c1, c2 = st.columns(2)
     with c1:
         st.info("### 📋 Full Staff Registry")
@@ -155,10 +170,7 @@ elif page == "🖨️ Report Center":
         st.success("### 🗓️ Full Event History")
         buf2 = BytesIO(); df_events.drop(columns=['Dur_Math'], errors='ignore').to_excel(buf2, index=False)
         st.download_button("📥 Download All Events", buf2.getvalue(), "Event_History.xlsx")
-    
     st.divider()
-    
-    # Specific Exports
     c3, c4 = st.columns(2)
     with c3:
         st.warning("### 👤 Individual Staff Profile")
@@ -169,25 +181,18 @@ elif page == "🖨️ Report Center":
                 df_staff[df_staff['SN'] == p_sn].to_excel(writer, sheet_name='Details', index=False)
                 df_events[df_events['SN'] == p_sn].drop(columns=['Dur_Math'], errors='ignore').to_excel(writer, sheet_name='Events', index=False)
             st.download_button(f"📥 Download SN: {p_sn}", buf3.getvalue(), f"Profile_{p_sn}.xlsx")
-
     with c4:
         st.error("### 📍 Event-Specific Report")
         if not df_events.empty:
-            # Create a unique list of Event Key (Location + Name + Date)
             df_events['Event_Key'] = df_events['Event Location'] + " | " + df_events['Event Name'] + " (" + df_events['Event Date'].astype(str) + ")"
             sel_event = st.selectbox("Select Event Location/Date", df_events['Event_Key'].unique())
-            
             if st.button("Generate Event Staff List"):
                 event_data = df_events[df_events['Event_Key'] == sel_event]
-                # Merge with staff registry to get Names and Ranks
-                final_report = pd.merge(event_data[['SN', 'Event Location', 'Event Name', 'Event Date']], 
-                                        df_staff[['SN', 'Name', 'Rank', 'Unit']], on='SN', how='left')
-                
-                buf4 = BytesIO()
-                final_report.to_excel(buf4, index=False)
+                final_report = pd.merge(event_data[['SN', 'Event Location', 'Event Name', 'Event Date']], df_staff[['SN', 'Name', 'Rank', 'Unit']], on='SN', how='left')
+                buf4 = BytesIO(); final_report.to_excel(buf4, index=False)
                 st.download_button(f"📥 Download Attendee List", buf4.getvalue(), f"Event_Report.xlsx")
 
-# --- 10. DATA MANAGEMENT ---
+# --- 11. DATA MANAGEMENT ---
 elif page == "⚙️ Data Management":
     st.title("⚙️ Data Management")
     gc = get_gspread_client(); sh = gc.open_by_key(SHEET_ID)
