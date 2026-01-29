@@ -142,13 +142,13 @@ elif page == "🏆 Leaderboard":
             st.subheader("🎖️ Most Events Attended")
             counts = df_events['SN'].value_counts().reset_index()
             counts.columns = ['SN', 'Count']
-            merged = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
+            merged = pd.merge(counts, df_staff[['SN', 'Name', 'Rank']], on='SN').head(5)
             st.dataframe(merged[['Rank', 'Name', 'Count']], use_container_width=True, hide_index=True)
         with c2:
             st.subheader("⏳ Total Time on Field")
             durs = df_events.groupby('SN')['Dur_Math'].sum().sort_values(ascending=False).reset_index()
             durs.columns = ['SN', 'Mins']
-            merged_dur = pd.merge(durs, df_staff[['SN', 'Name', 'Rank']], on='SN').head(15)
+            merged_dur = pd.merge(durs, df_staff[['SN', 'Name', 'Rank']], on='SN').head(5)
             st.dataframe(merged_dur[['Rank', 'Name', 'Mins']], use_container_width=True, hide_index=True)
 
 elif page == "📈 Event Statistics":
@@ -223,4 +223,5 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
 
