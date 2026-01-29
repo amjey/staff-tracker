@@ -68,7 +68,7 @@ nav_options = ["📊 Strategic Overview", "👤 Staff Search & History", "🗓�
 if access_type == "Admin":
     # Replace 'YourSecret123' with your chosen password
     admin_pw = st.sidebar.text_input("Admin Password", type="password")
-    if admin_pw == "YourSecret123":
+    if admin_pw == "10836":
         st.sidebar.success("Logged in as Admin")
         nav_options += ["🖨️ Report Center", "⚙️ Data Management"]
     elif admin_pw != "":
@@ -223,3 +223,4 @@ elif page == "⚙️ Data Management":
                 e_grp = st.selectbox("Group", ["New Year", "Eid", "National Day", "Opening", "Other"])
                 if st.form_submit_button("Log"):
                     sh.worksheet("Event Details").append_row([e_ref, e_sn, e_loc, e_name, str(e_date), str(e_dur), e_grp]); st.rerun()
+
